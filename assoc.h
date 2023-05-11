@@ -7,5 +7,7 @@ int assoc_delete(const char *key, const size_t nkey, const uint32_t hv);
 
 void assoc_bump(item *it, const uint32_t hv);
 int try_evict(const int orig_id, const uint64_t total_bytes, const rel_time_t max_age);
+int32_t get_curr_items(void);
 
+extern __thread int tid;
 extern unsigned int hashpower;

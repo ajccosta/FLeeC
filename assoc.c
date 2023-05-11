@@ -62,10 +62,15 @@ static List** hashtable = 0;
 static CLOCK_TYPE* clock_val = NULL;
 static __thread uint32_t hand = 0;
 
+//Array with number of current items
+//  cannot be uint because one thread might add and other remove
+static int32_t* curr_items = NULL; 
+
 void assoc_init(const int hashtable_init) {
     if (hashtable_init) {
         hashpower = hashtable_init;
     }
+    hashpower = 13;
 
     //Allocate space for hashsize lists
     hashtable = calloc(hashsize(hashpower), sizeof(List *));
@@ -83,6 +88,9 @@ void assoc_init(const int hashtable_init) {
         fprintf(stderr, "Failed to init CLOCK values.\n");
         exit(EXIT_FAILURE);
     }
+
+    //Allocate array that keeps track of total number of items
+    curr_items = calloc(settings.num_threads, sizeof(int32_t));
 
     STATS_LOCK();
     stats_state.hash_power_level = hashpower;
@@ -130,6 +138,7 @@ item *assoc_find(const char *key, const size_t nkey, const uint32_t hv) {
 int assoc_insert(item *it, const uint32_t hv) {
     List *l;
     uint32_t hmask;
+    int ret;
 
     hmask = hv & hashmask(hashpower);
     inc_clock(hmask);
@@ -137,20 +146,31 @@ int assoc_insert(item *it, const uint32_t hv) {
     l = hashtable[hmask];
 
     MEMCACHED_ASSOC_INSERT(ITEM_key(it), it->nkey);
-    //Original memcached returned 1 always
-    return insert(l, it);
+
+    ret = insert(l, it);
+    if(ret) {
+        curr_items[tid]++;
+    }
+
+    return ret;
 }
 
 int assoc_delete(const char *key, const size_t nkey, const uint32_t hv) {
     List *l;
     uint32_t hmask;
+    int ret;
 
     hmask = hv & hashmask(hashpower);
 
     //Should decrement CLOCK reference?
     l = hashtable[hmask];
     
-    return del(l, key, nkey) != NULL;
+    ret = del(l, key, nkey) != NULL;
+    if(ret) {
+        curr_items[tid]--;
+    }
+
+    return ret;
 }
 
 void assoc_bump(item *it, const uint32_t hv) {
@@ -190,10 +210,19 @@ int try_evict(const int orig_id, const uint64_t total_bytes, const rel_time_t ma
             removed = empty_list(l);
 
             //If no one removed list might of been empty or removal failed
-            if(removed > 0)
+            if(removed > 0) {
+                curr_items[tid] -= removed; 
                 return removed;
+            }
         }
     }
 
     return removed;
+}
+
+int32_t get_curr_items() {
+    int32_t res = 0;
+    for(int i = 0; i < settings.num_threads; i++)
+        res += curr_items[i];
+    return res;
 }
