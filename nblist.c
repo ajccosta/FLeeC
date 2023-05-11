@@ -65,7 +65,8 @@ List* new_nblist(void) {
 }
 
 
-
+int gets[8];
+int derefs[8];
 item* search(List* list, const char* search_key, const size_t nkey, item **left_item) {
 	//NULL because of warnings
 	item *left_item_next = NULL, *right_item;
@@ -235,7 +236,7 @@ bool insert(List *list, item *it) {
     } while (true); /*B3*/
 }
 
-item* del(List* list, const char* search_key, const size_t nkey) {
+item* del(List* list, const char* search_key, const size_t nkey, bool reclaim, bool *found) {
     item *right_item, *right_item_next, *left_item = NULL;
 
     do {
@@ -253,6 +254,8 @@ item* del(List* list, const char* search_key, const size_t nkey) {
 
     } while (true); /*B4*/
 
+    *found = true;
+
     if (!CAS(&(left_item->next), &right_item, right_item_next)) {/*C4*/
         right_item = (item*) get_unmarked_reference(right_item);
         right_item = search(list, ITEM_key(right_item), right_item->nkey, &left_item);
@@ -260,7 +263,9 @@ item* del(List* list, const char* search_key, const size_t nkey) {
     }
 
     /* add removed item to be reclaimed */
-    ebr_add_retired_item(right_item);
+    if(reclaim)
+        ebr_add_retired_item(right_item);
+
     return right_item;
 }
 

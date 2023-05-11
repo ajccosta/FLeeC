@@ -150,7 +150,14 @@ NODE_TYPE* get_safe_to_reclaim(reclamation* recl) {
 //Reclaims all items that are safe to reclaim
 void reclaim(reclamation *recl) {
     NODE_TYPE *n;
-    void (*reclaim_func)(void*) = recl->r->reclaim;
+    void (*reclaim_func)(void*);
+
+    if(tid < recl->r->num_threads) { //Normal thread
+        reclaim_func = recl->r->reclaim;
+    } else { //Maintenance thread
+        reclaim_func = &free;
+    }
+
     while((n = get_safe_to_reclaim(recl)) != NULL) {
         (*reclaim_func)(n);
         recl->total_reclaimed++;

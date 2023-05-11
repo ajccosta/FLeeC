@@ -3896,7 +3896,8 @@ static void clock_handler(const evutil_socket_t fd, const short which, void *arg
 
     // While we're here, check for hash table expansion.
     // This function should be quick to avoid delaying the timer.
-    //assoc_start_expand(stats_state.curr_items);
+    assoc_check_expand();
+
     // also, if HUP'ed we need to do some maintenance.
     // for now that's just the authfile reload.
     if (settings.sig_hup) {
@@ -4680,7 +4681,7 @@ int main (int argc, char **argv) {
     bool udp_specified = false;
     bool start_lru_maintainer = true;
     bool start_lru_crawler = true;
-    bool start_assoc_maint = false;
+    //bool start_assoc_maint = true;
     enum hashfunc_type hash_type = MURMUR3_HASH;
     uint32_t tocrawl;
     uint32_t slab_sizes[MAX_NUMBER_OF_SLAB_CLASSES];
@@ -5174,7 +5175,7 @@ int main (int argc, char **argv) {
                 }
                 break;
             case NO_HASHEXPAND:
-                start_assoc_maint = false;
+                //start_assoc_maint = false;
                 break;
             case SLAB_REASSIGN:
                 settings.slab_reassign = true;
@@ -5953,8 +5954,6 @@ int main (int argc, char **argv) {
     //Force these settings:
     start_lru_maintainer = false;
     settings.lru_segmented = false;
-    //Disable hash table maintener thread (did table expasion)
-    start_assoc_maint = false;
     //Disable lru and hash table crawler
     settings.lru_crawler = false;
     start_lru_crawler = false;
@@ -5969,9 +5968,6 @@ int main (int argc, char **argv) {
     }
 #endif
 
-    if (start_assoc_maint) {
-        exit(EXIT_FAILURE);
-    }
     if (start_lru_crawler) {
         fprintf(stderr, "Failed to enable LRU crawler thread\n");
         exit(EXIT_FAILURE);

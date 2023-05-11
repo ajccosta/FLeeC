@@ -964,6 +964,7 @@ void slab_stats_aggregate(struct thread_stats *stats, struct slab_stats *out) {
  *
  * nthreads  Number of worker event handler threads to spawn
  */
+ebr *r; /* Make main ebr struct observable by all threads including maintenance */
 void memcached_thread_init(int nthreads, void *arg) {
     int         i;
     int         power;
@@ -1006,7 +1007,15 @@ void memcached_thread_init(int nthreads, void *arg) {
         exit(1);
     }
 
-    ebr *r = init_ebr(nthreads, &reclaim_item);
+    //Start ebr for each thread + assoc maintenance thread
+    r = init_ebr(nthreads + 1, &reclaim_item);
+
+    if (start_assoc_maintenance_thread(r) == -1) {
+    //Ignore disabling assoc maint, for simplicity
+    //if (start_assoc_maint && start_assoc_maintenance_thread(r) == -1) {
+        exit(EXIT_FAILURE);
+    }
+
     
     for (i = 0; i < nthreads; i++) {
 #ifdef HAVE_EVENTFD

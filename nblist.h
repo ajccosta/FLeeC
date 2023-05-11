@@ -33,7 +33,7 @@ bool is_empty(List *list);
 int __mark_all_nodes(List* list);
 item* search(List* list, const char* search_key, const size_t nkey, item **left_item);
 bool insert(List *list, item *it);
-item* del(List* list, const char* search_key, const size_t nkey);
+item* del(List* list, const char* search_key, const size_t nkey, bool reclaim, bool *found);
 bool find(List *list, const char* search_key, const size_t nkey);
 item* get(List *list, const char* search_key, const size_t nkey);
 item* search_index(List* list, const int index, item **left_item, bool is_delete);

@@ -28,7 +28,7 @@
 #include "nblist.h"
 
 /* how many powers of 2's worth of buckets we use */
-unsigned int hashpower = HASHPOWER_DEFAULT;
+volatile unsigned int hashpower = HASHPOWER_DEFAULT;
 
 //Amount of collision lists
 #define hashsize(n) ((uint64_t)1<<(n))
@@ -38,6 +38,7 @@ unsigned int hashpower = HASHPOWER_DEFAULT;
 
 /* Main hash table. This is where we look except during expansion. */
 static List** hashtable = 0;
+static List** new_hashtable = 0; /* hash table that is being expanded into */
 
 
 /* Clock related */
@@ -60,17 +61,22 @@ static List** hashtable = 0;
 #endif
 
 static CLOCK_TYPE* clock_val = NULL;
+static CLOCK_TYPE* new_clock_val = NULL;
 static __thread uint32_t hand = 0;
 
 //Array with number of current items
 //  cannot be uint because one thread might add and other remove
-static int32_t* curr_items = NULL; 
+static int64_t* curr_items = NULL; 
+
+/* Maintenence thread  / expansion */
+static pthread_cond_t maintenance_cond = PTHREAD_COND_INITIALIZER;
+static pthread_mutex_t maintenance_lock = PTHREAD_MUTEX_INITIALIZER;
+static volatile bool expanding = false;
 
 void assoc_init(const int hashtable_init) {
     if (hashtable_init) {
         hashpower = hashtable_init;
     }
-    hashpower = 13;
 
     //Allocate space for hashsize lists
     hashtable = calloc(hashsize(hashpower), sizeof(List *));
@@ -90,7 +96,7 @@ void assoc_init(const int hashtable_init) {
     }
 
     //Allocate array that keeps track of total number of items
-    curr_items = calloc(settings.num_threads, sizeof(int32_t));
+    curr_items = calloc(settings.num_threads, sizeof(int64_t));
 
     STATS_LOCK();
     stats_state.hash_power_level = hashpower;
@@ -131,6 +137,17 @@ item *assoc_find(const char *key, const size_t nkey, const uint32_t hv) {
     l = hashtable[hmask];
     it = get(l, key, nkey);
 
+    if(expanding && it == NULL) {
+        //Look in other bucket as well, if we are expanding
+        //  and item was not in the first bucket
+        hmask = hv & hashmask(hashpower);
+        inc_clock(hmask);
+        l = new_hashtable[hmask];
+        it = get(l, key, nkey);
+
+        //Dont change CLOCK while expanding
+    }
+
     MEMCACHED_ASSOC_FIND(key, nkey, depth);
     return it;
 }
@@ -140,10 +157,16 @@ int assoc_insert(item *it, const uint32_t hv) {
     uint32_t hmask;
     int ret;
 
-    hmask = hv & hashmask(hashpower);
-    inc_clock(hmask);
+    if(expanding) {
+        hmask = hv & hashmask(hashpower + 1);
+        l = new_hashtable[hmask];
+        //Dont change CLOCK while expanding
+    } else {
+        hmask = hv & hashmask(hashpower);
+        l = hashtable[hmask];
+        inc_clock(hmask);
+    }
 
-    l = hashtable[hmask];
 
     MEMCACHED_ASSOC_INSERT(ITEM_key(it), it->nkey);
 
@@ -165,9 +188,22 @@ int assoc_delete(const char *key, const size_t nkey, const uint32_t hv) {
     //Should decrement CLOCK reference?
     l = hashtable[hmask];
     
-    ret = del(l, key, nkey) != NULL;
-    if(ret) {
+    bool found = false;
+    ret = del(l, key, nkey, true, &found) != NULL;
+
+    if(ret || found) {
         curr_items[tid]--;
+
+    } else if(expanding) {
+        //Also look in other bucket,
+        //  item was not found in first
+        hmask = hv & hashmask(hashpower + 1);
+        l = new_hashtable[hmask];
+        ret = del(l, key, nkey, true, &found) != NULL;
+
+        if(ret || found) {
+            curr_items[tid]--;
+        }
     }
 
     return ret;
@@ -177,6 +213,9 @@ void assoc_bump(item *it, const uint32_t hv) {
     uint32_t hmask;
     hmask = hv & hashmask(hashpower);
     inc_clock(hmask);
+
+    //Dont change CLOCK while expanding
+
     //assoc_delete(ITEM_key(it), it->nkey, hv);
     //assoc_insert(it, hv);    
 }
@@ -220,9 +259,179 @@ int try_evict(const int orig_id, const uint64_t total_bytes, const rel_time_t ma
     return removed;
 }
 
-int32_t get_curr_items() {
-    int32_t res = 0;
+uint64_t get_curr_items() {
+    int64_t res = 0;
     for(int i = 0; i < settings.num_threads; i++)
         res += curr_items[i];
-    return res;
+    return (uint64_t) res;
+}
+
+int start_assoc_maintenance_thread(ebr *r) {
+    int ret;
+    pthread_t thread;
+
+    if((ret = pthread_create(&thread, NULL, assoc_maintenance_thread, (void*) r)) != 0) {
+        fprintf(stderr, "Failed to start maintenance thread: %s\n", strerror(ret));
+        return -1;
+    }
+    
+    return 0;
+}
+
+/* Check if we should expand hash table */
+void assoc_check_expand() {
+    if (pthread_mutex_trylock(&maintenance_lock) == 0) {
+        uint64_t curr = get_curr_items();
+
+        /* If there are 1.5 more items than there are buckets, expand */
+        if (curr > (hashsize(hashpower) * 3) / 2 && hashpower < HASHPOWER_MAX) {
+            pthread_cond_signal(&maintenance_cond);
+        }
+        pthread_mutex_unlock(&maintenance_lock);
+    }
+}
+
+void start_expansion() {
+    unsigned int old_hashpower = hashpower;
+    unsigned int new_hashpower = old_hashpower + 1;
+
+    new_clock_val = calloc(hashsize(new_hashpower), sizeof(CLOCK_TYPE));
+    if (new_clock_val) {
+        //Copy CLOCK values to new buckets
+        for (unsigned int i = hashsize(hashpower); i < hashsize(new_hashpower); ++i) {
+            unsigned int clock_counterpart = i - hashsize(hashpower);
+            new_clock_val[i] = clock_val[clock_counterpart];
+        }
+
+    } else {
+        return;
+    }
+
+    //Allocate space for hashsize lists
+    new_hashtable = calloc(hashsize(new_hashpower), sizeof(List *));
+    if (new_hashtable) {
+
+        //Transfer existing buckets to new hashtable
+        for (unsigned int i = 0; i < hashsize(old_hashpower); ++i)
+            new_hashtable[i] = hashtable[i];
+
+        //Create new buckets
+        for (unsigned int i = hashsize(old_hashpower); i < hashsize(new_hashpower); ++i)
+            new_hashtable[i] = new_nblist();
+
+        //Threads can now insert into new hash table
+        //If we incremented hashpower here, then there might be threads
+        //  that see that the table is expanding but do not see new hashpower
+        //  (because those operations are not atomic). So, threads should calculate
+        //  the new hashpower themselves if they observe that an expansion is occurring
+        expanding = true;
+
+        //TODO: lookups and deletes must be done in both "hashpowers" during expansion
+    
+        if(settings.verbose > 0)
+            fprintf(stderr, "Starting expansion from %d to %d\n", hashpower, hashpower + 1);
+    } else {
+        free(new_clock_val);
+    }
+}
+
+
+#define ASSOC_MAINTENENCE_THREAD_SLEEP 10000
+
+void *assoc_maintenance_thread(void *arg) {
+    ebr *r = (ebr*) arg; /* Main ebr struct */
+    reclamation *recl = init_reclamation(r, settings.num_threads, 1);
+    enter_quiescent(recl);
+
+    //Required for cond signal to work (and unlock this)
+    mutex_lock(&maintenance_lock);
+    bool expanded_last_iter = false;
+
+    while(true) {
+
+        //Do not expand twice in a row (without waiting for cond)
+        if(expanding && !expanded_last_iter) {
+            expanded_last_iter = true;
+
+            //Wait for two epochs, so that no thread thinks the
+            //  old hashtable is the current hashtable and inserts
+            //  new items there
+            uint64_t curr_epoch = r->curr_epoch;
+            while(r->curr_epoch < curr_epoch + 2) {
+                announce_epoch(recl);
+                enter_quiescent(recl);
+                usleep(ASSOC_MAINTENENCE_THREAD_SLEEP);
+            }
+
+            int old_hashpower = hashpower;
+            int old_hashsize = hashsize(old_hashpower);
+
+            for(uint32_t i = 0; i < old_hashsize; ++i) {
+                item *head, *tail, *it, *next;
+
+                List *l = hashtable[i]; //old hash table
+                head = l->head;
+                tail = l->tail;
+                
+                //Traverse items in bucket
+                for(it = head->next; it != tail; it = next) {
+                    char *key = ITEM_key(it);
+                    uint8_t size = it->nkey;
+                    uint32_t item_hash = hash(key, size);
+                    uint32_t new_bucket = item_hash & hashmask(old_hashpower + 1);
+
+                    //Read next now because if we reinser it will change
+                    next = (item*) get_unmarked_reference(it->next);
+
+                    if(i != new_bucket) {
+                        //hash mask's left most bit is not 0, change item's bucket
+
+                        List *new_list = new_hashtable[new_bucket];
+
+                        //During this time, the item is not visible
+                        //There is also the chance that an item is marked and deleted
+                        //  by anoter thread, deleting it permanently
+                        //TODO: maybe mark the 2nd least significant bit as well
+                        //  to prevent this from happening?
+
+                        bool unused;
+                        if(del(l, key, size, false, &unused)) { //TODO: This can be optimized, we already searched
+                            insert(new_list, it);
+
+                            if(settings.verbose > 0) {
+                                printf("Replaced item %.*s, from bucket %d to %d\n",
+                                    it->nkey, ITEM_key(it), i, new_bucket);
+                            }
+                        }
+                    }
+                }
+
+            }
+
+            //Finish expanding
+            //TODO: is this safe? The OS should not care
+            add_retired_item(recl, (void*) hashtable);
+            add_retired_item(recl, (void*) clock_val);
+
+            hashtable = new_hashtable;
+            clock_val = new_clock_val;
+
+            enter_quiescent(recl);
+
+            expanding = false;
+            hashpower++;
+
+            if(settings.verbose > 0) {
+                fprintf(stderr, "Expansion ended\n");
+            }
+
+        } else {
+            expanded_last_iter = false;
+            pthread_cond_wait(&maintenance_cond, &maintenance_lock);
+            start_expansion();
+        }
+    }
+
+    mutex_unlock(&maintenance_lock);
+    return NULL;
 }
