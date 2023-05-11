@@ -339,6 +339,7 @@ void start_expansion() {
 #define ASSOC_MAINTENENCE_THREAD_SLEEP 10000
 
 void *assoc_maintenance_thread(void *arg) {
+    tid = settings.num_threads;
     ebr *r = (ebr*) arg; /* Main ebr struct */
     reclamation *recl = init_reclamation(r, settings.num_threads, 1);
     enter_quiescent(recl);
@@ -398,7 +399,7 @@ void *assoc_maintenance_thread(void *arg) {
                         if(del(l, key, size, false, &unused)) { //TODO: This can be optimized, we already searched
                             insert(new_list, it);
 
-                            if(settings.verbose > 0) {
+                            if(settings.verbose > 1) {
                                 printf("Replaced item %.*s, from bucket %d to %d\n",
                                     it->nkey, ITEM_key(it), i, new_bucket);
                             }

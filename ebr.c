@@ -152,7 +152,10 @@ void reclaim(reclamation *recl) {
     NODE_TYPE *n;
     void (*reclaim_func)(void*);
 
-    if(tid < recl->r->num_threads) { //Normal thread
+    //Num threads here includes assoc maint thread
+    int real_num_threads = recl->r->num_threads - 1;
+
+    if(tid < real_num_threads) { //Normal thread
         reclaim_func = recl->r->reclaim;
     } else { //Maintenance thread
         reclaim_func = &free;
