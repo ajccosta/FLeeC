@@ -65,8 +65,6 @@ List* new_nblist(void) {
 }
 
 
-int gets[8];
-int derefs[8];
 item* search(List* list, const char* search_key, const size_t nkey, item **left_item) {
 	//NULL because of warnings
 	item *left_item_next = NULL, *right_item;
