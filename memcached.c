@@ -1589,8 +1589,8 @@ enum store_item_type do_store_item(item *it, int comm, LIBEVENT_THREAD *t, const
 
         switch (comm) {
             case NREAD_ADD:
-                /* add only adds a nonexistent item, but promote to head of LRU */
-                do_store = true;
+                /* bump item */
+		do_item_update(old_it, hv);
                 break;
             case NREAD_CAS:
                 if (cas_res == CAS_MATCH) {
@@ -1663,6 +1663,7 @@ enum store_item_type do_store_item(item *it, int comm, LIBEVENT_THREAD *t, const
 
         if (do_store) {
             item_replace(old_it, it, hv);
+	    //item_free(it);
             stored = STORED;
         }
 
