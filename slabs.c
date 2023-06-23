@@ -852,6 +852,8 @@ enum move_status {
  * seed the item key while holding slabs_lock.
  */
 static int slab_rebalance_move(void) {
+    //TODO: check if this is impacting hit ratio (hasnt been modified)
+    //TODO: check if this can be integrated with Fleec
     slabclass_t *s_cls;
     int was_busy = 0;
     int refcount = 0;
