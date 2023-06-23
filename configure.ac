@@ -1,7 +1,7 @@
-AC_PREREQ([2.71])
+AC_PREREQ(2.52)
 m4_include([version.m4])
 m4_include([m4/c99-backport.m4])
-AC_INIT([memcached],[VERSION_NUMBER],[memcached@googlegroups.com])
+AC_INIT([memcached], [VERSION_NUMBER], [memcached@googlegroups.com])
 AC_CANONICAL_HOST
 AC_CONFIG_SRCDIR([memcached.c])
 AM_INIT_AUTOMAKE([foreign])
@@ -90,10 +90,7 @@ dnl assembling crc instructions without this
 AS_IF(test "$CLANG" = "yes",[CFLAGS="$CFLAGS -Wno-language-extension-token"])
 
 if test "$ICC" = "no"; then
-   m4_warn([obsolete],
-[AC_PROG_CC_C99 is obsolete; use AC_PROG_CC
-])dnl
-AC_REQUIRE(AC_PROG_CC)
+   AC_PROG_CC_C99
 fi
 
 AM_PROG_CC_C_O
@@ -145,11 +142,14 @@ AC_DEFUN([AC_C_DETECT_SASL_CB_GETCONF],
 [
     AC_CACHE_CHECK([for SASL_CB_GETCONF],
         [ac_cv_c_sasl_cb_getconf],
-        [AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+        [AC_TRY_COMPILE(
+            [
 #include <sasl/sasl.h>
-            ]], [[
+            ], [
 unsigned long val = SASL_CB_GETCONF;
-            ]])],[ ac_cv_c_sasl_cb_getconf=yes ],[ ac_cv_c_sasl_cb_getconf=no ])
+            ],
+            [ ac_cv_c_sasl_cb_getconf=yes ],
+            [ ac_cv_c_sasl_cb_getconf=no ])
         ])
     AS_IF([test "$ac_cv_c_sasl_cb_getconf" = "yes"],
           [AC_DEFINE([HAVE_SASL_CB_GETCONF], 1,
@@ -165,11 +165,14 @@ AC_DEFUN([AC_C_DETECT_SASL_CB_GETCONFPATH],
 [
     AC_CACHE_CHECK([for SASL_CB_GETCONFPATH],
         [ac_cv_c_sasl_cb_getconfpath],
-        [AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+        [AC_TRY_COMPILE(
+            [
 #include <sasl/sasl.h>
-            ]], [[
+            ], [
 unsigned long val = SASL_CB_GETCONFPATH;
-            ]])],[ ac_cv_c_sasl_cb_getconfpath=yes ],[ ac_cv_c_sasl_cb_getconfpath=no ])
+            ],
+            [ ac_cv_c_sasl_cb_getconfpath=yes ],
+            [ ac_cv_c_sasl_cb_getconfpath=no ])
         ])
     AS_IF([test "$ac_cv_c_sasl_cb_getconfpath" = "yes"],
           [AC_DEFINE([HAVE_SASL_CB_GETCONFPATH], 1,
@@ -377,9 +380,10 @@ AC_CACHE_CHECK([for libevent directory], ac_cv_libevent_dir, [
       fi
     fi
     # Can I compile and link it?
-    AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <sys/time.h>
+    AC_TRY_LINK([#include <sys/time.h>
 #include <sys/types.h>
-#include <event.h>]], [[ event_init(); ]])],[ libevent_linked=yes ],[ libevent_linked=no ])
+#include <event.h>], [ event_init(); ],
+       [ libevent_linked=yes ], [ libevent_linked=no ])
     if test $libevent_linked = yes; then
        if test ! -z "$ledir" ; then
          ac_cv_libevent_dir=$ledir
@@ -480,11 +484,12 @@ if test "x$enable_tls" = "xyes"; then
           fi
         fi
         # Can I compile and link it?
-        AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <sys/time.h>
+        AC_TRY_LINK([#include <sys/time.h>
     #include <sys/types.h>
     #include <assert.h>
-    #include <openssl/ssl.h>]], [[ SSL_CTX* ssl_ctx = SSL_CTX_new(TLS_server_method());
-                                assert(OPENSSL_VERSION_NUMBER >= 0x10100000L);]])],[ libssl_linked=yes ],[ libssl_linked=no ])
+    #include <openssl/ssl.h>], [ SSL_CTX* ssl_ctx = SSL_CTX_new(TLS_server_method());
+                                assert(OPENSSL_VERSION_NUMBER >= 0x10100000L);],
+           [ libssl_linked=yes ], [ libssl_linked=no ])
         if test $libssl_linked = yes; then
           if test ! -z "$ledir" ; then
             ac_cv_libssl_dir=$ledir
@@ -551,6 +556,7 @@ AH_BOTTOM([#ifdef HAVE_INTTYPES_H
 #include <inttypes.h>
 #endif
 ])
+AC_CHECK_HEADERS([sys/auxv.h])
 
 dnl **********************************************************************
 dnl Figure out if this system has the stupid sasl_callback_ft
@@ -559,14 +565,14 @@ dnl **********************************************************************
 AC_DEFUN([AC_HAVE_SASL_CALLBACK_FT],
 [AC_CACHE_CHECK(for sasl_callback_ft, ac_cv_has_sasl_callback_ft,
 [
-  AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+  AC_TRY_COMPILE([
     #ifdef HAVE_SASL_SASL_H
     #include <sasl/sasl.h>
     #include <sasl/saslplug.h>
     #endif
-  ]], [[
+  ],[
     sasl_callback_ft a_callback;
-  ]])],[
+  ],[
     ac_cv_has_sasl_callback_ft=yes
   ],[
     ac_cv_has_sasl_callback_ft=no
@@ -588,15 +594,18 @@ AC_DEFUN([AC_C_DETECT_UINT64_SUPPORT],
 [
     AC_CACHE_CHECK([for print macros for integers (C99 section 7.8.1)],
         [ac_cv_c_uint64_support],
-        [AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+        [AC_TRY_COMPILE(
+            [
 #ifdef HAVE_INTTYPES_H
 #include <inttypes.h>
 #endif
 #include <stdio.h>
-            ]], [[
+            ], [
   uint64_t val = 0;
   fprintf(stderr, "%" PRIu64 "\n", val);
-            ]])],[ ac_cv_c_uint64_support=yes ],[ ac_cv_c_uint64_support=no ])
+            ],
+            [ ac_cv_c_uint64_support=yes ],
+            [ ac_cv_c_uint64_support=no ])
         ])
 ])
 
@@ -615,12 +624,12 @@ dnl Check if the type socklen_t is defined anywhere
 AC_DEFUN([AC_C_SOCKLEN_T],
 [AC_CACHE_CHECK(for socklen_t, ac_cv_c_socklen_t,
 [
-  AC_COMPILE_IFELSE([AC_LANG_PROGRAM([[
+  AC_TRY_COMPILE([
     #include <sys/types.h>
     #include <sys/socket.h>
-  ]], [[
+  ],[
     socklen_t foo;
-  ]])],[
+  ],[
     ac_cv_c_socklen_t=yes
   ],[
     ac_cv_c_socklen_t=no
@@ -643,18 +652,18 @@ AC_DEFUN([AC_C_HTONLL],
 [
     AC_MSG_CHECKING([for htonll])
     have_htoll="no"
-    AC_LINK_IFELSE([AC_LANG_PROGRAM([[
+    AC_TRY_LINK([
 #include <sys/types.h>
 #include <netinet/in.h>
 #ifdef HAVE_INTTYPES_H
 #include <inttypes.h> */
 #endif
-       ]], [[
+       ], [
           return htonll(0);
-       ]])],[
+       ], [
           have_htoll="yes"
           AC_DEFINE([HAVE_HTONLL], [1], [Have ntohll])
-    ],[
+    ], [
           have_htoll="no"
     ])
 
@@ -734,27 +743,27 @@ dnl These were added in 4.1.2, but 32bit OS's may lack shorts and 4.1.2
 dnl lacks testable defines.
 have_gcc_atomics=no
 AC_MSG_CHECKING(for GCC atomics)
-AC_LINK_IFELSE([AC_LANG_PROGRAM([[]], [[
+AC_TRY_LINK([],[
   unsigned short a;
   unsigned short b;
   b = __sync_add_and_fetch(&a, 1);
   b = __sync_sub_and_fetch(&a, 2);
-  ]])],[have_gcc_atomics=yes
-  AC_DEFINE(HAVE_GCC_ATOMICS, 1, [GCC Atomics available])],[])
+  ],[have_gcc_atomics=yes
+  AC_DEFINE(HAVE_GCC_ATOMICS, 1, [GCC Atomics available])])
 AC_MSG_RESULT($have_gcc_atomics)
 
 dnl Check for usage of 64bit atomics
 dnl 32bit systems shouldn't have these.
 have_gcc_64atomics=no
 AC_MSG_CHECKING(for GCC 64bit atomics)
-AC_LINK_IFELSE([AC_LANG_PROGRAM([[#include <inttypes.h>
-   ]], [[
+AC_TRY_LINK([#include <inttypes.h>
+   ],[
   uint64_t a;
   uint64_t b;
   b = __sync_add_and_fetch(&a, 1);
   b = __sync_sub_and_fetch(&a, 2);
-  ]])],[have_gcc_64atomics=yes
-  AC_DEFINE(HAVE_GCC_64ATOMICS, 1, [GCC 64bit Atomics available])],[])
+  ],[have_gcc_64atomics=yes
+  AC_DEFINE(HAVE_GCC_64ATOMICS, 1, [GCC 64bit Atomics available])])
 AC_MSG_RESULT($have_gcc_64atomics)
 
 dnl Check for the requirements for running memcached with less privileges

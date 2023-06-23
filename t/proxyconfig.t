@@ -38,6 +38,17 @@ sub mock_server {
     return $srv;
 }
 
+sub accept_backend {
+    my $srv = shift;
+    my $be = $srv->accept();
+    $be->autoflush(1);
+    ok(defined $be, "mock backend created");
+    like(<$be>, qr/version/, "received version command");
+    print $be "VERSION 1.0.0-mock\r\n";
+
+    return $be;
+}
+
 # Put a version command down the pipe to ensure the socket is clear.
 # client version commands skip the proxy code
 sub check_version {
@@ -60,7 +71,7 @@ sub wait_reload {
 }
 
 my @mocksrvs = ();
-diag "making mock servers";
+#diag "making mock servers";
 for my $port (11511, 11512, 11513) {
     my $srv = mock_server($port);
     ok(defined $srv, "mock server created");
@@ -70,12 +81,12 @@ for my $port (11511, 11512, 11513) {
 diag "testing failure to start";
 write_modefile("invalid syntax");
 eval {
-    my $p_srv = new_memcached('-o proxy_config=./t/proxyconfig.lua -l 127.0.0.1', 11510);
+    my $p_srv = new_memcached('-o proxy_config=./t/proxyconfig.lua');
 };
 ok($@ && $@ =~ m/Failed to connect/, "server successfully not started");
 
 write_modefile('return "none"');
-my $p_srv = new_memcached('-o proxy_config=./t/proxyconfig.lua -l 127.0.0.1', 11510);
+my $p_srv = new_memcached('-o proxy_config=./t/proxyconfig.lua');
 my $ps = $p_srv->sock;
 $ps->autoflush(1);
 
@@ -104,26 +115,18 @@ my %keymap = ();
 my $keycount = 100;
 {
     # set up server backend sockets.
-    for my $msrv ($mocksrvs[0], $mocksrvs[1], $mocksrvs[2]) {
-        my $be = $msrv->accept();
-        $be->autoflush(1);
-        ok(defined $be, "mock backend created");
-        push(@mbe, $be);
-    }
-
     my $s = IO::Select->new();
-
-    for my $be (@mbe) {
+    for my $msrv ($mocksrvs[0], $mocksrvs[1], $mocksrvs[2]) {
+        my $be = accept_backend($msrv);
         $s->add($be);
-        like(<$be>, qr/version/, "received version command");
-        print $be "VERSION 1.0.0-mock\r\n";
+        push(@mbe, $be);
     }
 
     # Try sending something.
     my $cmd = "mg foo v\r\n";
     print $ps $cmd;
     my @readable = $s->can_read(0.25);
-    is(scalar @readable, 1, "only one backend became readable");
+    is(scalar @readable, 1, "only one backend became readable after mg");
     my $be = shift @readable;
     is(scalar <$be>, $cmd, "metaget passthrough");
     print $be "EN\r\n";
@@ -133,7 +136,7 @@ my $keycount = 100;
     for my $key (0 .. $keycount) {
         print $ps "mg /test/$key\r\n";
         my @readable = $s->can_read(0.25);
-        is(scalar @readable, 1, "only one backend became readable");
+        is(scalar @readable, 1, "only one backend became readable for this key");
         my $be = shift @readable;
         for (0 .. 2) {
             if ($be == $mbe[$_]) {
@@ -154,9 +157,8 @@ my @holdbe = (); # avoid having the backends immediately disconnect and pollute 
     $p_srv->reload();
     wait_reload($watcher);
 
-    # sleep a short time; b1 should have a very short timeout and the
-    # others are long.
-    select(undef, undef, undef, 0.5);
+    my $watch_s = IO::Select->new();
+    $watch_s->add($watcher);
 
     my $s = IO::Select->new();
     for my $msrv (@mocksrvs) {
@@ -167,13 +169,13 @@ my @holdbe = (); # avoid having the backends immediately disconnect and pollute 
     # host, and port arguments.
     is(scalar @readable, 3, "all listeners became readable");
 
-    like(<$watcher>, qr/ts=(\S+) gid=\d+ type=proxy_backend error=timeout name=\S+ port=11511/, "one backend timed out connecting");
+    my @watchable = $watch_s->can_read(5);
+    is(scalar @watchable, 1, "got new watcher log lines");
+    like(<$watcher>, qr/ts=(\S+) gid=\d+ type=proxy_backend error=readvalidate name=\S+ port=11511/, "one backend timed out connecting");
+    like(<$watcher>, qr/ts=(\S+) gid=\d+ type=proxy_backend error=markedbad name=\S+ port=11511/, "backend was marked bad");
 
     for my $msrv (@readable) {
-        my $be = $msrv->accept();
-        ok(defined $be, "mock backend accepted");
-        like(<$be>, qr/version/, "received version command");
-        print $be "VERSION 1.0.0-mock\r\n";
+        my $be = accept_backend($msrv);
         push(@holdbe, $be);
     }
 
@@ -221,10 +223,10 @@ is(<$watcher>, "OK\r\n", "watcher enabled");
     for my $msrv (@readable) {
         my @temp = ();
         for (0 .. 3) {
-            my $be = $msrv->accept();
-            ok(defined $be, "mock backend accepted");
-            like(<$be>, qr/version/, "received version command");
-            print $be "VERSION 1.0.0-mock\r\n";
+            my $be = accept_backend($msrv);
+            # For this set of tests we need to fetch until no data remains in
+            # the socket.
+            $be->blocking(0);
             $bes->add($be);
             push(@temp, $be);
         }
@@ -264,13 +266,58 @@ is(<$watcher>, "OK\r\n", "watcher enabled");
         push(@cli, $p);
     }
 
+    @readable = $s->can_read(0.25);
+    is(scalar @readable, 0, "no listeners should be active pre-reload");
+    $p_srv->reload();
+    wait_reload($watcher);
+    @readable = $s->can_read(0.25);
+    is(scalar @readable, 0, "no listeners should be active post-reload");
+
+    note "testing batch workload";
+
+    my $batch = '';
+    my $batch_size = 50;
+    for (0 .. $batch_size) {
+        $batch .= "ms /test/$_ 5\r\nhello\r\n";
+    }
+    print $ps $batch;
+
+    my $remain = $batch_size;
+    # Not using the test hardness for the readback to cut spam/time.
+    while ($remain > 0) {
+        my @ready = $bes->can_read();
+        for my $be (@ready) {
+            while (1) {
+                my $be1 = $be->getline;
+                my $be2 = $be->getline;
+                if ($be1 && $be2) {
+                    print $be "HD\r\n";
+                } else {
+                    last;
+                }
+                #diag "read " . $remain;
+                $remain--;
+            }
+        }
+    }
+
+    is($remain, -1, "completed batch workload to backends");
+
+    for (0 .. $batch_size) {
+        my $res = <$ps>;
+        if ($res ne "HD\r\n") {
+            is($res, "HD\r\n", "correct result returned to client " . $_);
+        }
+    }
+
+    note "done testing batch limit";
+
+    check_version($ps);
 }
 
 # TODO:
 # remove backends
 # do dead sockets close?
-# adding user stats
-# changing user stats
 # adding backends with the same label don't create more connections
 # total backend counters
 # change top level routes mid-request

@@ -156,7 +156,29 @@ my $sock = $server->sock;
 }
 
 {
-    diag "basic mset CAS";
+    note "ensure mset flag reflection doesn't bleed";
+    # mset return flags are internally implemented by stashing the flags in
+    # the write buffer then re-parsing them later (to preserve order...) so we
+    # need to check extra that I'm not being a dingus and forgetting a break
+    # statement.
+    print $sock "ms a 1\r\n1\r\n";
+    is(scalar <$sock>, "HD\r\n", "no flags");
+
+    print $sock "ms a 1 c\r\n1\r\n";
+    like(scalar <$sock>, qr/^HD c\d+\r\n/, "c flag");
+
+    print $sock "ms a 1 Otest\r\n1\r\n";
+    like(scalar <$sock>, qr/^HD Otest\r\n/, "O flag");
+
+    print $sock "ms a 1 s\r\n1\r\n";
+    like(scalar <$sock>, qr/^HD s1\r\n/, "s flag");
+
+    print $sock "ms a 1 k\r\n1\r\n";
+    like(scalar <$sock>, qr/^HD ka\r\n/, "k flag");
+}
+
+{
+    note "basic mset CAS";
     my $key = "msetcas";
     print $sock "ms $key 2\r\nbo\r\n";
     like(scalar <$sock>, qr/^HD/, "set test key");
@@ -174,7 +196,7 @@ my $sock = $server->sock;
 }
 
 {
-    diag "mdelete with cas";
+    note "mdelete with cas";
     my $key = "mdeltest";
     print $sock "ms $key 2\r\nzo\r\n";
     like(scalar <$sock>, qr/^HD/, "set test key");
@@ -191,7 +213,7 @@ my $sock = $server->sock;
 }
 
 {
-    diag "encoded binary keys";
+    note "encoded binary keys";
     # 44OG44K544OI is "tesuto" in katakana
     my $tesuto = "44OG44K544OI";
     print $sock "ms $tesuto 2 b\r\npo\r\n";
@@ -208,7 +230,7 @@ my $sock = $server->sock;
 }
 
 {
-    diag "marithmetic tests";
+    note "marithmetic tests";
     print $sock "ma mo\r\n";
     like(scalar <$sock>, qr/^NF\r/, "incr miss");
 
@@ -276,7 +298,7 @@ my $sock = $server->sock;
 # mset tests with mode switch flag (M)
 
 {
-    diag "mset mode switch";
+    note "mset mode switch";
     print $sock "ms modedefault 2 T120\r\naa\r\n";
     like(scalar <$sock>, qr/^HD/, "default set mode");
     mget_is({ sock => $sock,
@@ -327,6 +349,32 @@ my $sock = $server->sock;
     # invalid mode
     print $sock "ms modetest 2 T120 MZ\r\ntt\r\n";
     like(scalar <$sock>, qr/^CLIENT_ERROR /, "invalid mode");
+}
+
+# Append tests
+{
+    print $sock "ms appendcas 2 MA C5000 T30\r\nhi\r\n";
+    is(scalar <$sock>, "NS\r\n", "ms append with bad cas");
+    print $sock "ms appendcas 2 MA T30\r\nhi\r\n";
+    is(scalar <$sock>, "NS\r\n", "ms append straight miss");
+    print $sock "ms appendcas 2 T30 c\r\nho\r\n";
+    my $res = <$sock>;
+    my $r = parse_res($res);
+    my $cas = get_flag($r, 'c');
+    print $sock "ms appendcas 2 MA C$cas T30\r\nhi\r\n";
+    is(scalar <$sock>, "HD\r\n", "ms append with good cas");
+
+    # Autovivify append.
+    print $sock "ms appendviv 2 MA N30\r\nmo\r\n";
+    is(scalar <$sock>, "HD\r\n", "ms append with autovivify");
+    mget_is({ sock => $sock,
+              flags => 's v',
+              eflags => 's2' },
+             'appendviv', 'mo', "retrieved autoviv append");
+
+    # Test full size on append.
+    print $sock "ms appendviv 2 MA N30 s\r\nko\r\n";
+    is(scalar <$sock>, "HD s4\r\n", "got appended length");
 }
 
 # lease-test, use two sockets? one socket should be fine, actually.
@@ -771,6 +819,17 @@ sub mget_res {
     } elsif ($resp =~ m/^HD\s*([^\r]+)\r\n/gm) {
         $r{flags} = $1;
         $r{hd} = 1;
+    }
+
+    return \%r;
+}
+
+sub parse_res {
+    my $resp = shift;
+    my %r = ();
+    if ($resp =~ m/^(\w\w)\s*([^\r]+)\r\n/gm) {
+        $r{status} = $1;
+        $r{flags} = $2;
     }
 
     return \%r;

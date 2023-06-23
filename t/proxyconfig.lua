@@ -2,10 +2,10 @@
 -- so we can modify ourselves.
 local mode = dofile("/tmp/proxyconfigmode.lua")
 
-mcp.backend_read_timeout(4)
-mcp.backend_connect_timeout(5)
-
 function mcp_config_pools(old)
+    mcp.backend_read_timeout(4)
+    mcp.backend_connect_timeout(5)
+
     if mode == "none" then
         return {}
     elseif mode == "start" then
@@ -19,7 +19,7 @@ function mcp_config_pools(old)
         return pools
     elseif mode == "betable" then
         local b1 = mcp.backend({ label = "b1", host = "127.0.0.1", port = 11511,
-            connecttimeout = 2, retrytimeout = 5, readtimeout = 0.1,
+            connecttimeout = 2, retrytimeout = 5, readtimeout = 1,
             failurelimit = 0 })
         local b2 = mcp.backend({ label = "b2", host = "127.0.0.1", port = 11512,
             connecttimeout = 2, retrytimeout = 5, readtimeout = 5 })
@@ -49,10 +49,7 @@ function mcp_config_routes(zones)
     if mode == "none" then
         mcp.attach(mcp.CMD_MG, function(r) return "SERVER_ERROR no mg route\r\n" end)
         mcp.attach(mcp.CMD_MS, function(r) return "SERVER_ERROR no ms route\r\n" end)
-    elseif mode == "start" or mode == "betable" then
-        mcp.attach(mcp.CMD_MG, function(r) return zones["test"](r) end)
-        mcp.attach(mcp.CMD_MS, function(r) return zones["test"](r) end)
-    elseif mode == "noiothread" then
+    else
         mcp.attach(mcp.CMD_MG, function(r) return zones["test"](r) end)
         mcp.attach(mcp.CMD_MS, function(r) return zones["test"](r) end)
     end

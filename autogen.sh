@@ -49,3 +49,4 @@ $AUTOMAKE --foreign --add-missing || $AUTOMAKE --gnu --add-missing || exit 1
 echo "autoconf..."
 AUTOCONF=${AUTOCONF:-autoconf}
 $AUTOCONF || exit 1
+
