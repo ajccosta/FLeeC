@@ -209,6 +209,35 @@ int assoc_delete(const char *key, const size_t nkey, const uint32_t hv) {
     return ret;
 }
 
+int assoc_replace(item *old_it, item *new_it, const uint32_t hv) {
+    List *l;
+    uint32_t hmask;
+    bool inserted;
+    item* it;
+
+    if(expanding) {
+        //TODO: Think about how expansion could mess this up!
+        hmask = hv & hashmask(hashpower + 1);
+        l = new_hashtable[hmask];
+        //Dont change CLOCK while expanding
+
+    } else {
+        hmask = hv & hashmask(hashpower);
+        l = hashtable[hmask];
+        inc_clock(hmask);
+    }
+
+
+    it = replace(l, ITEM_key(old_it), old_it->nkey, new_it, true, &inserted);
+
+    if(!inserted) {
+        //Item was not inserted, we insert ourselves
+        return assoc_insert(new_it, hv);
+    }
+
+    return it != NULL;
+}
+
 void assoc_bump(item *it, const uint32_t hv) {
     uint32_t hmask;
     hmask = hv & hashmask(hashpower);

@@ -1,5 +1,7 @@
 #include "nblist.h"
 #include <stdlib.h>
+#include <limits.h>
+#include <assert.h>
 #include <stdbool.h>
 #include <string.h>
 
@@ -29,7 +31,8 @@ void print_list(List * list) {
     while(next != list->tail) {
         n = next;
         keep_real = n->next;
-        printf("%.*s:%ld ", n->nkey, ITEM_key(n), is_marked_reference(keep_real));
+        printf("%.*s:%ld:%d ",
+            n->nkey, ITEM_key(n), is_marked_reference(keep_real), is_marked_replacement_reference(keep_real) > 0);
         c++;
         next = (item *) get_unmarked_reference(n->next);
     }
@@ -65,11 +68,30 @@ List* new_nblist(void) {
 }
 
 
+
+#define MAX_REPLACE_RETRIES 5000
+
 item* search(List* list, const char* search_key, const size_t nkey, item **left_item) {
 	//NULL because of warnings
-	item *left_item_next = NULL, *right_item;
+	item *left_item_next = NULL, *right_item = NULL;
+
+    int replace_retries = 0; //Number of times retried because of replace marked items
 
 search_again:
+
+    if(right_item != NULL &&
+        is_marked_replacement_reference(right_item->next)) {
+
+        //We retried because of replace marking
+        replace_retries++;
+
+        if(replace_retries >= MAX_REPLACE_RETRIES) {
+            //Thread replacing has likely crashed
+            //  try and finish part of the job, i.e., delete old item
+            del_by_ref(list, right_item, true);
+        }
+    }
+
 	do {
         item *t = list->head;
         item *t_next = list->head->next; 
@@ -96,7 +118,10 @@ search_again:
         right_item = t; 
 		/* 2: Check items are adjacent */
         if (left_item_next == right_item) {
-            if ((right_item != list->tail) && is_marked_reference(right_item->next))
+
+            if ((right_item != list->tail) &&
+                (is_marked_reference(right_item->next) ||
+                is_marked_replacement_reference(right_item->next)))
                 goto search_again; /*G1*/
 			else
 				return right_item; /*R1*/
@@ -113,7 +138,9 @@ search_again:
                 marked_counter--;
             }
 
-            if ((right_item != list->tail) && is_marked_reference(right_item->next))
+            if ((right_item != list->tail) &&
+                (is_marked_reference(right_item->next) ||
+                is_marked_replacement_reference(right_item->next)))
 				goto search_again; /*G2*/
             else
 		      	return right_item; /*R2*/
@@ -122,16 +149,7 @@ search_again:
     } while (true); /*B2*/
 }
 
-/*
-  Takes in list and gives 2 return values:
-  P:Pointer to first removed item
-  N:Number of removed items
 
-  if P = NULL and N = 0 then there were no items to remove
-  if P = NULL and N = -1 then the CAS to remove items failed
-  if P != NULL then P points to the first removed item and
-      N represents the number of items that were removed that are "linked" to P
-*/
 int cleanup(List* list) {
 	item *left_item_next, *right_item, *left_item;
 	left_item_next = right_item = left_item = NULL;
@@ -253,6 +271,144 @@ item* del(List* list, const char* search_key, const size_t nkey, bool reclaim, b
     } while (true); /*B4*/
 
     *found = true;
+
+    if (!CAS(&(left_item->next), &right_item, right_item_next)) {/*C4*/
+        right_item = (item*) get_unmarked_reference(right_item);
+        right_item = search(list, ITEM_key(right_item), right_item->nkey, &left_item);
+        return NULL;
+    }
+
+    /* add removed item to be reclaimed */
+    if(reclaim)
+        ebr_add_retired_item(right_item);
+
+    return right_item;
+}
+
+//Will return NULL if item was not found
+//  If item was not found, it was not inserted either, so if
+//  the objective is to insert it, insert should be called
+item* replace(List* list, const char* search_key, const size_t nkey, item *new_it,
+    bool reclaim, bool *inserted) {
+
+    item *right_item, *right_item_next, *left_item = NULL;
+    item *old_it; //Item to remove
+
+    *inserted = false;
+
+    do { /* Mark old item as replaced */
+
+        //Search for item to be replaced
+        right_item = search(list, search_key, nkey, &left_item);
+        if ((right_item == list->tail) ||
+            (KEY_cmp(ITEM_key(right_item), search_key, right_item->nkey, nkey) != 0))
+            return NULL; //Item not found
+
+        //Mark as being replaced
+        right_item_next = right_item->next;
+        if (!is_marked_reference(right_item_next) &&
+            CAS(&(right_item->next), &right_item_next,
+                (item *) get_marked_replacement_reference(right_item_next)))
+				break; //Item logically deleted or CAS failed, repeat
+
+    } while (true); /*B3*/
+
+    old_it = right_item;
+
+    goto skip_search_1; //Try not to re-search
+
+
+    do { /* Insertion of new item portion */
+
+        //Search for olt item by reference so as not to find any other item
+        right_item = search_by_ref(list, old_it, &left_item);
+
+        if ((right_item == list->tail) ||
+            (KEY_cmp(ITEM_key(right_item), search_key, right_item->nkey, nkey) != 0))
+            return NULL; //Item concurrently removed, nothing else to do
+
+skip_search_1:
+
+        //Insert new item
+        new_it->next = right_item;
+        if (CAS(&(left_item->next), &right_item, new_it))
+            break;
+
+    } while (true);
+
+    *inserted = true;
+    //Threads starting to traverse the list
+    //  after this point will see the new item
+
+    goto skip_search_2; //Try not to re-search
+
+    do { /* Logically delete old item */
+
+        //Search for olt item by reference so as not to find any other item
+        right_item = search_by_ref(list, old_it, &left_item);
+
+        if ((right_item == list->tail) ||
+            (KEY_cmp(ITEM_key(right_item), search_key, right_item->nkey, nkey) != 0))
+            return NULL; //Item concurrently removed, nothing else to do
+
+skip_search_2:
+
+        //refresh right_item_next as it has been marked
+        right_item_next = right_item->next;
+
+        if (!is_marked_reference(right_item_next))
+            if (CAS(&(right_item->next), /*C3*/ &right_item_next,
+					(item *) get_marked_reference(right_item_next)))
+				break;
+
+    } while (true);
+
+    /* Physically remove old item */
+    if (!CAS(&(new_it->next), &right_item, get_unmarked_reference(right_item_next))) {/*C4*/
+        right_item = (item*) get_unmarked_reference(right_item);
+        right_item = search(list, ITEM_key(right_item), right_item->nkey, &left_item);
+        return NULL;
+    }
+
+    /* add removed item to be reclaimed */
+    if(reclaim)
+        ebr_add_retired_item(right_item);
+
+    return right_item;
+}
+
+
+item* search_by_ref(List* list, item *ref, item **left_item) {
+    item *left, *right, *search_ref;
+
+    left = list->head;
+    right = list->head->next;
+    search_ref = (item *) get_unmarked_reference(ref); 
+
+    while(right != search_ref && right != list->tail) {
+        left = right;
+        right = (item *) get_unmarked_reference(left->next);
+    }
+
+    *left_item = left;
+    return right;
+}
+
+//Same as del but search by ref
+item* del_by_ref(List *list, item *to_del, bool reclaim) {
+    item *right_item, *right_item_next, *left_item = NULL;
+
+    do {
+        right_item = search_by_ref(list, to_del, &left_item);
+
+        right_item_next = right_item->next;
+
+        if (!is_marked_reference(right_item_next))
+            if (CAS(&(right_item->next), /*C3*/ &right_item_next,
+					(item *) get_marked_reference(right_item_next)))
+				break;
+
+    } while (true); /*B4*/
 
     if (!CAS(&(left_item->next), &right_item, right_item_next)) {/*C4*/
         right_item = (item*) get_unmarked_reference(right_item);

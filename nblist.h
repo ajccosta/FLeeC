@@ -34,6 +34,9 @@ int __mark_all_nodes(List* list);
 item* search(List* list, const char* search_key, const size_t nkey, item **left_item);
 bool insert(List *list, item *it);
 item* del(List* list, const char* search_key, const size_t nkey, bool reclaim, bool *found);
+item* replace(List* list, const char* search_key, const size_t nkey, item *new_it, bool reclaim, bool *inserted);
+item* search_by_ref(List* list, item *ref, item **left_item);
+item* del_by_ref(List *list, item *to_del, bool reclaim);
 bool find(List *list, const char* search_key, const size_t nkey);
 item* get(List *list, const char* search_key, const size_t nkey);
 item* search_index(List* list, const int index, item **left_item, bool is_delete);
@@ -61,10 +64,20 @@ void static inline ebr_leave_quiescent() {leave_quiescent(recl);}
 
 
 //"Generic" key type (equivalent to void)
-#define KeyType uintptr_t
+#define Type uintptr_t
 /* Marking references */
-#define get_marked_reference(x)   	((KeyType) x | 1)
-#define get_unmarked_reference(x) 	((KeyType) x & ~(KeyType) 1)
-#define is_marked_reference(x) 		((KeyType) x & 1)
+//Mark reference as logically deleted
+#define get_marked_reference(x)   	((Type) x | 1)
+//Check if reference is logically deleted
+#define is_marked_reference(x) 		((Type) x & 1)
+
+//Mark reference as being replaced
+#define get_marked_replacement_reference(x)   	((Type) x | 2)
+//Check if reference is being replaced
+#define is_marked_replacement_reference(x) 		((Type) x & 2)
+
+//Get original reference
+//  mandatory for every reference that might be marked for obvious reasons
+#define get_unmarked_reference(x) 	((Type) x & ~(Type) 3) //Unmarks both "normal" and "replacement" mark
 
 #endif

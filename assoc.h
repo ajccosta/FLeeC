@@ -5,6 +5,7 @@ item *assoc_find(const char *key, const size_t nkey, const uint32_t hv);
 int assoc_insert(item *item, const uint32_t hv);
 int assoc_delete(const char *key, const size_t nkey, const uint32_t hv);
 
+int assoc_replace(item *old_it, item *new_it, const uint32_t hv);
 void assoc_bump(item *it, const uint32_t hv);
 int try_evict(const int orig_id, const uint64_t total_bytes, const rel_time_t max_age);
 
