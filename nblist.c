@@ -330,20 +330,21 @@ item* replace(List* list, const char* search_key, const size_t nkey, item *new_i
         //  So, we search by key but ignore replacement mark so that we can actually
         //  find the item
 
-        //right_item = search(list, search_key, nkey, &left_item, true);
-        //if ((right_item != list->tail) && !is_marked_replacement_reference(right_item->next)
-        //    && (ITEM_cmp(right_item, new_it) == 0))
-        //    return NULL;
-
-        right_item = search_by_ref(list, old_it, &left_item);
-        if ((right_item == list->tail) ||
-            (KEY_cmp(ITEM_key(right_item), search_key, right_item->nkey, nkey) != 0))
-            return NULL; //Item concurrently removed, nothing else to do
+        //TODO: can this be added? Atm if the CAS fails and we re-search it allows multiple items with the same name to be inserted
+        //  re-searching not working!
+        //right_item = search_by_ref(list, old_it, &left_item);
+        //assert(right_item == (item*) get_unmarked_reference(old_it) || right_item == list->tail);
+        //if ((right_item == list->tail) ||
+        //    (KEY_cmp(ITEM_key(right_item), search_key, right_item->nkey, nkey) != 0))
+        //    return NULL; //Item concurrently removed, nothing else to do
+        //assert(right_item == (item*) get_unmarked_reference(old_it));
 
         //Insert new item
         new_it->next = right_item;
-        if (CAS(&(left_item->next), &right_item, new_it))
+        if (CAS(&(left_item->next), &old_it, new_it))
             break;
+        else
+            return NULL;
 
     } while (true);
 
@@ -397,8 +398,8 @@ item* search_by_ref(List* list, item *ref, item **left_item) {
         right = (item *) get_unmarked_reference(left->next);
     }
 
-    *left_item = left;
-    return right;
+    *left_item = (item *) get_unmarked_reference(left);
+    return (item *) get_unmarked_reference(right);
 }
 
 //Same as del but search by ref
