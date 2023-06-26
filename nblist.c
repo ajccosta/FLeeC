@@ -389,7 +389,7 @@ item* search_by_ref(List* list, item *ref, item **left_item) {
     item *left, *right, *search_ref;
 
     left = list->head;
-    right = list->head->next;
+    right = (item *) get_unmarked_reference(list->head->next);
     search_ref = (item *) get_unmarked_reference(ref); 
 
     while(right != search_ref && right != list->tail) {
