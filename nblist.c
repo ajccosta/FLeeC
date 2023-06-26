@@ -31,8 +31,13 @@ void print_list(List * list) {
     while(next != list->tail) {
         n = next;
         keep_real = n->next;
+        //printf("%.*s:%ld:%d:%d:%d ",
+        //    n->nkey, ITEM_key(n), is_marked_reference(keep_real),
+        //    is_marked_replacement_reference(keep_real) > 0, n->id,
+        //    n->tid);
         printf("%.*s:%ld:%d ",
-            n->nkey, ITEM_key(n), is_marked_reference(keep_real), is_marked_replacement_reference(keep_real) > 0);
+            n->nkey, ITEM_key(n), is_marked_reference(keep_real),
+            is_marked_replacement_reference(keep_real) > 0);
         c++;
         next = (item *) get_unmarked_reference(n->next);
     }
@@ -71,7 +76,9 @@ List* new_nblist(void) {
 
 #define MAX_REPLACE_RETRIES 5000
 
-item* search(List* list, const char* search_key, const size_t nkey, item **left_item) {
+item* search(List* list, const char* search_key, const size_t nkey, item **left_item,
+    bool ignore_replacement) {
+
 	//NULL because of warnings
 	item *left_item_next = NULL, *right_item = NULL;
 
@@ -79,7 +86,7 @@ item* search(List* list, const char* search_key, const size_t nkey, item **left_
 
 search_again:
 
-    if(right_item != NULL &&
+    if(!ignore_replacement && right_item != NULL &&
         is_marked_replacement_reference(right_item->next)) {
 
         //We retried because of replace marking
@@ -121,7 +128,7 @@ search_again:
 
             if ((right_item != list->tail) &&
                 (is_marked_reference(right_item->next) ||
-                is_marked_replacement_reference(right_item->next)))
+                (!ignore_replacement && is_marked_replacement_reference(right_item->next))))
                 goto search_again; /*G1*/
 			else
 				return right_item; /*R1*/
@@ -140,7 +147,7 @@ search_again:
 
             if ((right_item != list->tail) &&
                 (is_marked_reference(right_item->next) ||
-                is_marked_replacement_reference(right_item->next)))
+                (!ignore_replacement && is_marked_replacement_reference(right_item->next))))
 				goto search_again; /*G2*/
             else
 		      	return right_item; /*R2*/
@@ -239,7 +246,7 @@ bool insert(List *list, item *it) {
     item *right_item, *left_item;
 
     do {
-        right_item = search(list, ITEM_key(it), it->nkey, &left_item);
+        right_item = search(list, ITEM_key(it), it->nkey, &left_item, false);
 
         if ((right_item != list->tail) && (ITEM_cmp(right_item, it) == 0)) /*T1*/
 			return false;
@@ -256,7 +263,7 @@ item* del(List* list, const char* search_key, const size_t nkey, bool reclaim, b
     item *right_item, *right_item_next, *left_item = NULL;
 
     do {
-        right_item = search(list, search_key, nkey, &left_item);
+        right_item = search(list, search_key, nkey, &left_item, false);
         if ((right_item == list->tail) ||
             (KEY_cmp(ITEM_key(right_item), search_key, right_item->nkey, nkey) != 0)) /*T1*/
             return NULL;
@@ -274,7 +281,7 @@ item* del(List* list, const char* search_key, const size_t nkey, bool reclaim, b
 
     if (!CAS(&(left_item->next), &right_item, right_item_next)) {/*C4*/
         right_item = (item*) get_unmarked_reference(right_item);
-        right_item = search(list, ITEM_key(right_item), right_item->nkey, &left_item);
+        right_item = search(list, ITEM_key(right_item), right_item->nkey, &left_item, false);
         return NULL;
     }
 
@@ -293,41 +300,45 @@ item* replace(List* list, const char* search_key, const size_t nkey, item *new_i
 
     item *right_item, *right_item_next, *left_item = NULL;
     item *old_it; //Item to remove
-
     *inserted = false;
 
-    do { /* Mark old item as replaced */
+    /* Mark old item as replaced */
+    //Search for item to be replaced
+    right_item = search(list, search_key, nkey, &left_item, false);
+    if ((right_item == list->tail) ||
+        (KEY_cmp(ITEM_key(right_item), search_key, right_item->nkey, nkey) != 0)) {
+        //Item not found, try to do normal insert
+        *inserted = insert(list, new_it);
+        return NULL;
+    }
 
-        //Search for item to be replaced
-        right_item = search(list, search_key, nkey, &left_item);
-        if ((right_item == list->tail) ||
-            (KEY_cmp(ITEM_key(right_item), search_key, right_item->nkey, nkey) != 0))
-            return NULL; //Item not found
+    //Mark as being replaced
+    right_item_next = right_item->next;
+    if (is_marked_reference(right_item_next) || is_marked_replacement_reference(right_item_next) ||
+        !CAS(&(right_item->next), &right_item_next,
+            (item *) get_marked_replacement_reference(right_item_next)))
+			return NULL; //Item logically deleted or CAS failed, repeat
 
-        //Mark as being replaced
-        right_item_next = right_item->next;
-        if (!is_marked_reference(right_item_next) &&
-            CAS(&(right_item->next), &right_item_next,
-                (item *) get_marked_replacement_reference(right_item_next)))
-				break; //Item logically deleted or CAS failed, repeat
-
-    } while (true); /*B3*/
 
     old_it = right_item;
 
-    goto skip_search_1; //Try not to re-search
-
-
     do { /* Insertion of new item portion */
 
-        //Search for olt item by reference so as not to find any other item
-        right_item = search_by_ref(list, old_it, &left_item);
+        //Search for olt item, ignoring replacement
+        //  searching by reference would ignore keys and would let
+        //  a key be inserted twice
+        //  So, we search by key but ignore replacement mark so that we can actually
+        //  find the item
 
+        //right_item = search(list, search_key, nkey, &left_item, true);
+        //if ((right_item != list->tail) && !is_marked_replacement_reference(right_item->next)
+        //    && (ITEM_cmp(right_item, new_it) == 0))
+        //    return NULL;
+
+        right_item = search_by_ref(list, old_it, &left_item);
         if ((right_item == list->tail) ||
             (KEY_cmp(ITEM_key(right_item), search_key, right_item->nkey, nkey) != 0))
             return NULL; //Item concurrently removed, nothing else to do
-
-skip_search_1:
 
         //Insert new item
         new_it->next = right_item;
@@ -337,10 +348,9 @@ skip_search_1:
     } while (true);
 
     *inserted = true;
+
     //Threads starting to traverse the list
     //  after this point will see the new item
-
-    goto skip_search_2; //Try not to re-search
 
     do { /* Logically delete old item */
 
@@ -351,22 +361,19 @@ skip_search_1:
             (KEY_cmp(ITEM_key(right_item), search_key, right_item->nkey, nkey) != 0))
             return NULL; //Item concurrently removed, nothing else to do
 
-skip_search_2:
-
         //refresh right_item_next as it has been marked
         right_item_next = right_item->next;
 
-        if (!is_marked_reference(right_item_next))
-            if (CAS(&(right_item->next), /*C3*/ &right_item_next,
-					(item *) get_marked_reference(right_item_next)))
-				break;
+        if (is_marked_reference(right_item_next) ||
+            CAS(&(right_item->next), /*C3*/ &right_item_next,
+			    (item *) get_marked_reference(right_item_next)))
+            break; //If is already marked or marking successful, continue to next stage
 
     } while (true);
 
     /* Physically remove old item */
     if (!CAS(&(new_it->next), &right_item, get_unmarked_reference(right_item_next))) {/*C4*/
-        right_item = (item*) get_unmarked_reference(right_item);
-        right_item = search(list, ITEM_key(right_item), right_item->nkey, &left_item);
+        cleanup(list); //TODO Better way to do this?
         return NULL;
     }
 
@@ -412,7 +419,7 @@ item* del_by_ref(List *list, item *to_del, bool reclaim) {
 
     if (!CAS(&(left_item->next), &right_item, right_item_next)) {/*C4*/
         right_item = (item*) get_unmarked_reference(right_item);
-        right_item = search(list, ITEM_key(right_item), right_item->nkey, &left_item);
+        right_item = search(list, ITEM_key(right_item), right_item->nkey, &left_item, false);
         return NULL;
     }
 
@@ -427,7 +434,7 @@ item* del_by_ref(List *list, item *to_del, bool reclaim) {
 bool find(List *list, const char* search_key, const size_t nkey) {
     item *right_item, *left_item = NULL;
 
-    right_item = search(list, search_key, nkey, &left_item);
+    right_item = search(list, search_key, nkey, &left_item, false);
 
     if ((right_item == list->tail) ||
         (KEY_cmp(ITEM_key(right_item), search_key, right_item->nkey, nkey) != 0)) {
@@ -439,7 +446,7 @@ bool find(List *list, const char* search_key, const size_t nkey) {
 
 item* get(List *list, const char* search_key, const size_t nkey) {
     item *right_item, *left_item = NULL;
-    right_item = search(list, search_key, nkey, &left_item);
+    right_item = search(list, search_key, nkey, &left_item, false);
 
     if ((right_item == list->tail) ||
         (KEY_cmp(ITEM_key(right_item), search_key, right_item->nkey, nkey) != 0)) {

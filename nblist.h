@@ -31,7 +31,7 @@ int cleanup(List* list);
 int empty_list(List* list);
 bool is_empty(List *list);
 int __mark_all_nodes(List* list);
-item* search(List* list, const char* search_key, const size_t nkey, item **left_item);
+item* search(List* list, const char* search_key, const size_t nkey, item **left_item, bool ignore_replacement);
 bool insert(List *list, item *it);
 item* del(List* list, const char* search_key, const size_t nkey, bool reclaim, bool *found);
 item* replace(List* list, const char* search_key, const size_t nkey, item *new_it, bool reclaim, bool *inserted);

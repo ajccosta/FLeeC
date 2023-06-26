@@ -829,8 +829,8 @@ int item_link(item *item) {
  * needed.
  */
 void item_remove(item *item) {
-    uint32_t hv;
-    hv = hash(ITEM_key(item), item->nkey);
+    //uint32_t hv;
+    //hv = hash(ITEM_key(item), item->nkey);
 
     //do_item_remove(item);
 }

@@ -213,7 +213,6 @@ int assoc_replace(item *old_it, item *new_it, const uint32_t hv) {
     List *l;
     uint32_t hmask;
     bool inserted;
-    item* it;
 
     if(expanding) {
         //TODO: Think about how expansion could mess this up!
@@ -227,15 +226,9 @@ int assoc_replace(item *old_it, item *new_it, const uint32_t hv) {
         inc_clock(hmask);
     }
 
+    replace(l, ITEM_key(old_it), old_it->nkey, new_it, true, &inserted);
 
-    it = replace(l, ITEM_key(old_it), old_it->nkey, new_it, true, &inserted);
-
-    if(!inserted) {
-        //Item was not inserted, we insert ourselves
-        return assoc_insert(new_it, hv);
-    }
-
-    return it != NULL;
+    return inserted;
 }
 
 void assoc_bump(item *it, const uint32_t hv) {
