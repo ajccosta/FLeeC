@@ -95,6 +95,7 @@ search_again:
         if(replace_retries >= MAX_REPLACE_RETRIES) {
             //Thread replacing has likely crashed
             //  try and finish part of the job, i.e., delete old item
+            //printf("Removing!\n");
             del_by_ref(list, right_item, true);
         }
     }
@@ -409,18 +410,22 @@ item* del_by_ref(List *list, item *to_del, bool reclaim) {
     do {
         right_item = search_by_ref(list, to_del, &left_item);
 
+        if (right_item == list->tail)
+            return NULL;
+
         right_item_next = right_item->next;
 
         if (!is_marked_reference(right_item_next))
             if (CAS(&(right_item->next), /*C3*/ &right_item_next,
-					(item *) get_marked_reference(right_item_next)))
+                    (item *) get_marked_reference(right_item_next)))
 				break;
 
     } while (true); /*B4*/
 
     if (!CAS(&(left_item->next), &right_item, right_item_next)) {/*C4*/
-        right_item = (item*) get_unmarked_reference(right_item);
-        right_item = search(list, ITEM_key(right_item), right_item->nkey, &left_item, false);
+        //Cant re-search by key
+        //  Possibly add item removal to search_by_ref, but it should
+        //  be ok to let normal search remove logically deleted items
         return NULL;
     }
 
