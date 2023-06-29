@@ -1590,7 +1590,7 @@ enum store_item_type do_store_item(item *it, int comm, LIBEVENT_THREAD *t, const
         switch (comm) {
             case NREAD_ADD:
                 /* bump item */
-		do_item_update(old_it, hv);
+		        do_item_update(old_it, hv);
                 break;
             case NREAD_CAS:
                 if (cas_res == CAS_MATCH) {

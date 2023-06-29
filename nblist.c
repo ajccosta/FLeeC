@@ -95,8 +95,8 @@ search_again:
         if(replace_retries >= MAX_REPLACE_RETRIES) {
             //Thread replacing has likely crashed
             //  try and finish part of the job, i.e., delete old item
-            //printf("Removing!\n");
             del_by_ref(list, right_item, true);
+            return NULL; //Did not find item, abort
         }
     }
 
@@ -249,7 +249,8 @@ bool insert(List *list, item *it) {
     do {
         right_item = search(list, ITEM_key(it), it->nkey, &left_item, false);
 
-        if ((right_item != list->tail) && (ITEM_cmp(right_item, it) == 0)) /*T1*/
+        if ((right_item == NULL) ||
+            ((right_item != list->tail) && (ITEM_cmp(right_item, it) == 0))) /*T1*/
 			return false;
 
         it->next = right_item;
@@ -265,7 +266,7 @@ item* del(List* list, const char* search_key, const size_t nkey, bool reclaim, b
 
     do {
         right_item = search(list, search_key, nkey, &left_item, false);
-        if ((right_item == list->tail) ||
+        if ((right_item == NULL) || (right_item == list->tail) ||
             (KEY_cmp(ITEM_key(right_item), search_key, right_item->nkey, nkey) != 0)) /*T1*/
             return NULL;
 
@@ -306,7 +307,7 @@ item* replace(List* list, const char* search_key, const size_t nkey, item *new_i
     /* Mark old item as replaced */
     //Search for item to be replaced
     right_item = search(list, search_key, nkey, &left_item, false);
-    if ((right_item == list->tail) ||
+    if ((right_item == NULL) || (right_item == list->tail) ||
         (KEY_cmp(ITEM_key(right_item), search_key, right_item->nkey, nkey) != 0)) {
         //Item not found, try to do normal insert
         *inserted = insert(list, new_it);
@@ -442,7 +443,7 @@ bool find(List *list, const char* search_key, const size_t nkey) {
 
     right_item = search(list, search_key, nkey, &left_item, false);
 
-    if ((right_item == list->tail) ||
+    if ((right_item == NULL) || (right_item == list->tail) ||
         (KEY_cmp(ITEM_key(right_item), search_key, right_item->nkey, nkey) != 0)) {
 		return false;
     } else {
@@ -454,7 +455,7 @@ item* get(List *list, const char* search_key, const size_t nkey) {
     item *right_item, *left_item = NULL;
     right_item = search(list, search_key, nkey, &left_item, false);
 
-    if ((right_item == list->tail) ||
+    if ((right_item == NULL) || (right_item == list->tail) ||
         (KEY_cmp(ITEM_key(right_item), search_key, right_item->nkey, nkey) != 0)) {
         return NULL;
     } else {
