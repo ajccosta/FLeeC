@@ -1,3 +1,8 @@
+/*
+ * Although the file name is ebr.c, this is actually closer
+ * to debra than ebr as it is a mixture of ebr and qsbr
+ */
+
 #include "memcached.h"
 #ifndef NODE_TYPE
     #define NODE_TYPE item
@@ -11,9 +16,8 @@
 #include <stdio.h>
 #include <stdatomic.h>
 
-//#ifndef CAS
-//    #define CAS(p, e, d) __atomic_compare_exchange_n(p, e, d, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED)
-//#endif
+//These two are the same thing
+//#define CAS(p, e, d) __atomic_compare_exchange_n(p, e, d, 0, __ATOMIC_RELAXED, __ATOMIC_RELAXED)
 #define CAS(p, e, d) atomic_compare_exchange_weak(p, e, d)
 
 //Initialize global structure that coordinates epochs
