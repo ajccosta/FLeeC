@@ -174,6 +174,15 @@ void reclaim(reclamation *recl) {
 //"Stop messing" with the data-structure
 void enter_quiescent(reclamation *recl) {
     *(recl->quiescent_bit) = true;
+
+	//Advance epoch so that threads that are
+	//	activelly trying to reclaim can do so
+    uint64_t curr_epoch = recl->r->curr_epoch;
+    if(curr_epoch > *recl->announcement) {
+        //Updated threads' epoch by announcing the current epoch
+        (*recl->announcement) = curr_epoch;
+        reclaim(recl); //Epoch was advanced, can reclaim e-2
+    }
 }
 
 //"Start messing" with the data-structure
