@@ -393,6 +393,8 @@ void *assoc_maintenance_thread(void *arg) {
             int old_hashpower = hashpower;
             int old_hashsize = hashsize(old_hashpower);
 
+            leave_quiescent(recl);
+
             for(uint32_t i = 0; i < old_hashsize; ++i) {
                 item *head, *tail, *it, *next;
 
