@@ -140,7 +140,7 @@ search_again:
             //Add one or more marked items to be reclaimed
             item *e = (item*) get_unmarked_reference(left_item_next);
             while(e != NULL && marked_counter > 0) {
-                ebr_add_retired_item(e);
+                ebr_add_retired_item(e, CUSTOM_TYPE);
                 assert(is_marked_reference(e->next));
                 e = (item*) get_unmarked_reference(e->next);
                 marked_counter--;
@@ -198,7 +198,7 @@ continue_cleanup:
             item *e = (item*) get_unmarked_reference(left_item_next);
             total_items_removed += items_removed;
             while(e != NULL && items_removed > 0) {
-                ebr_add_retired_item(e);
+                ebr_add_retired_item(e, CUSTOM_TYPE);
                 assert(is_marked_reference(e->next));
                 e = (item*) get_unmarked_reference(e->next);
                 items_removed--;
@@ -289,7 +289,7 @@ item* del(List* list, const char* search_key, const size_t nkey, bool reclaim, b
 
     /* add removed item to be reclaimed */
     if(reclaim)
-        ebr_add_retired_item(right_item);
+        ebr_add_retired_item(right_item, CUSTOM_TYPE);
 
     return right_item;
 }
@@ -382,7 +382,7 @@ item* replace(List* list, const char* search_key, const size_t nkey, item *new_i
 
     /* add removed item to be reclaimed */
     if(reclaim)
-        ebr_add_retired_item(right_item);
+        ebr_add_retired_item(right_item, CUSTOM_TYPE);
 
     return right_item;
 }
@@ -432,7 +432,7 @@ item* del_by_ref(List *list, item *to_del, bool reclaim) {
 
     /* add removed item to be reclaimed */
     if(reclaim)
-        ebr_add_retired_item(right_item);
+        ebr_add_retired_item(right_item, CUSTOM_TYPE);
 
     return right_item;
 }
@@ -506,7 +506,7 @@ search_again:
             //Add one or more marked items to be reclaimed
             item *e = (item*) get_unmarked_reference(left_item_next);
             while(e != NULL && marked_counter > 0) {
-                ebr_add_retired_item(e);
+                ebr_add_retired_item(e, CUSTOM_TYPE);
                 assert(is_marked_reference(e->next));
                 e = (item*) get_unmarked_reference(e->next);
                 marked_counter--;
@@ -566,7 +566,7 @@ item* del_index(List* list, const int index) {
     }
 
     /* add removed item to be reclaimed */
-    ebr_add_retired_item(right_item);
+    ebr_add_retired_item(right_item, CUSTOM_TYPE);
     return right_item;
 }
 

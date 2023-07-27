@@ -57,7 +57,9 @@ typedef struct { //TODO: Check if it is aligned correctly with memcached's item
 /* Reclamation related variables */
 extern __thread reclamation* recl;
 
-void static inline ebr_add_retired_item(item* item) {add_retired_item(recl, item);}
+void static inline ebr_add_retired_item(item* item, int reclaim_type) {
+	add_retired_item(recl, item, reclaim_type);
+}
 void static inline ebr_announce_epoch() {announce_epoch(recl);}
 void static inline ebr_enter_quiescent() {enter_quiescent(recl);}
 void static inline ebr_leave_quiescent() {leave_quiescent(recl);}

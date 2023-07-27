@@ -127,13 +127,28 @@ int can_advance_epoch(ebr* r) {
     return curr_epoch; /* Can try to advance from curr_epoch to curr_epoch + 1 */
 }
 
+
+
 //Add a item to the retired items set
-void add_retired_item(reclamation* recl, NODE_TYPE* item) {
+void add_retired_item(reclamation* recl, NODE_TYPE* item, int reclaim_type) {
+	void* marked_item = NULL;
+
     uint64_t epoch = recl->r->curr_epoch;
     uint8_t curr_bag_index = epoch % 3;
     bag* curr_bag = recl->limbo_bags[curr_bag_index];
+
+
+	switch(reclaim_type) {
+		case CUSTOM_TYPE:
+			marked_item = (void*) item; //most common, do not mark
+			break;
+		case OS_TYPE:
+			marked_item = (void*) get_os_marked_reference(item); //most common, do not mark
+			break;
+	}
+
     /* insert item into limbo bag */
-    put(curr_bag, item);
+    put(curr_bag, marked_item);
 }
  
 //Transfers limbo bag into the to_be_reclaimed bag
@@ -156,16 +171,17 @@ void reclaim(reclamation *recl) {
     NODE_TYPE *n;
     void (*reclaim_func)(void*);
 
-    //Num threads here includes assoc maint thread
-    int real_num_threads = recl->r->num_threads - 1;
-
-    if(tid < real_num_threads) { //Normal thread
-        reclaim_func = recl->r->reclaim;
-    } else { //Maintenance thread
-        reclaim_func = &free;
-    }
-
     while((n = get_safe_to_reclaim(recl)) != NULL) {
+		if(is_os_marked_reference(n)) {
+			//Reclaim by to OS
+			reclaim_func = OS_RECLAIM;
+			n = (void*) get_unmarked_reference(n);
+
+		} else {
+			//Reclaim to custom reclaimer function
+			reclaim_func = CUSTOM_RECLAIM;
+		}
+
         (*reclaim_func)(n);
         recl->total_reclaimed++;
     }

@@ -144,8 +144,6 @@ item *assoc_find(const char *key, const size_t nkey, const uint32_t hv) {
         inc_clock(hmask);
         l = new_hashtable[hmask];
         it = get(l, key, nkey);
-
-        //Dont change CLOCK while expanding
     }
 
     MEMCACHED_ASSOC_FIND(key, nkey, depth);
@@ -423,11 +421,25 @@ void *assoc_maintenance_thread(void *arg) {
                         //TODO: maybe mark the 2nd least significant bit as well
                         //  to prevent this from happening?
 
-                        bool unused;
+                        bool unused, ret;
                         if(del(l, key, size, false, &unused)) { //TODO: This can be optimized, we already searched
-                            insert(new_list, it);
+                            ret = insert(new_list, it);
 
-                            if(settings.verbose > 1) {
+							if(!ret) {
+								//Item not inserted for whatever reason,
+								//	should be safe to reclaim as it is 
+								//	not accessible through the data structure.
+								
+								//TODO: test this (?)
+       							add_retired_item(recl, it, CUSTOM_TYPE);
+ 
+                            	if(settings.verbose > 0) {
+                            	    printf("item %.*s, was already in %d\n",
+                            	        it->nkey, ITEM_key(it), new_bucket);
+                            	}
+
+
+							} else if(settings.verbose > 1) {
                                 printf("Replaced item %.*s, from bucket %d to %d\n",
                                     it->nkey, ITEM_key(it), i, new_bucket);
                             }
@@ -439,11 +451,22 @@ void *assoc_maintenance_thread(void *arg) {
 
             //Finish expanding
             //TODO: is this safe? The OS should not care
-            add_retired_item(recl, (void*) hashtable);
-            add_retired_item(recl, (void*) clock_val);
+            add_retired_item(recl, (void*) hashtable, OS_TYPE);
+            add_retired_item(recl, (void*) clock_val, OS_TYPE);
 
             hashtable = new_hashtable;
             clock_val = new_clock_val;
+
+			//Try and advance 2 epochs again, so that 
+			//	we reclaim the hash table, the clock values
+			//	and any items that we might of retired
+			//	during the hash table process
+			curr_epoch = r->curr_epoch;
+            while(r->curr_epoch < curr_epoch + 2) {
+                announce_epoch(recl);
+                enter_quiescent(recl);
+                usleep(ASSOC_MAINTENENCE_THREAD_SLEEP);
+            }
 
             enter_quiescent(recl);
 
