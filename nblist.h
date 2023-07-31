@@ -35,7 +35,7 @@ item* search(List* list, const char* search_key, const size_t nkey, item **left_
 bool insert(List *list, item *it);
 item* del(List* list, const char* search_key, const size_t nkey, bool reclaim, bool *found);
 item* replace(List* list, const char* search_key, const size_t nkey, item *new_it, bool reclaim, bool *inserted);
-item* search_by_ref(List* list, item *ref, item **left_item);
+item* search_by_ref(List* list, item *search_item, item **left_item, bool ignore_replacement);
 item* del_by_ref(List *list, item *to_del, bool reclaim);
 bool find(List *list, const char* search_key, const size_t nkey);
 item* get(List *list, const char* search_key, const size_t nkey);

@@ -31,7 +31,8 @@ memcached_SOURCES = memcached.c memcached.h \
                     proto_bin.c proto_bin.h \
                     nblist.c nblist.h \
                     ebr.c ebr.h \
-                    bag.h bag.c
+                    bag.c bag.h \
+					expbackoffcas.c expbackoffcas.h
 
 if BUILD_SOLARIS_PRIVS
 memcached_SOURCES += solaris_priv.c
