@@ -392,13 +392,13 @@ void do_item_update(item *it, const uint32_t hv) {
     assoc_bump(it, hv);
 }
 
-#define MARK_REPLACEMENT //Wether to do mark replacement or not (def or ndef)
+//#define MARK_REPLACEMENT //Wether to do mark replacement or not (def or ndef)
 int do_item_replace(item *it, item *new_it, const uint32_t hv) {
     MEMCACHED_ITEM_REPLACE(ITEM_key(it), it->nkey, it->nbytes,
                            ITEM_key(new_it), new_it->nkey, new_it->nbytes);
     assert((it->it_flags & ITEM_SLABBED) == 0);
 
-#ifndef MARK_REPLACEMENT
+#if !defined(MARK_REPLACEMENT) && !defined(POSTERIOR_INSERTION_REPLACEMENT)
     do_item_unlink(it, hv);
     return do_item_link(new_it, hv);
 #else

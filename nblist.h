@@ -7,6 +7,11 @@
 #include "memcached.h"
 #include "ebr.h"
 
+//#define MARK_REPLACEMENT					//Replacement algorithm with replacee marking
+#define POSTERIOR_INSERTION_REPLACEMENT		//Replacement algorithm with insertion after replacee
+//#define NO_REPLACEMENT 					//No replacement algorithm
+
+
 //Assumes that insert by index wont be used:
 #define KEY_cmp(key1, key2, size1, size2) __extension__({int32_t diff = (size1 - size2); \
     diff != 0 ? diff : \
@@ -31,7 +36,6 @@ int cleanup(List* list);
 int empty_list(List* list);
 bool is_empty(List *list);
 int __mark_all_nodes(List* list);
-item* search(List* list, const char* search_key, const size_t nkey, item **left_item, bool ignore_replacement);
 bool insert(List *list, item *it);
 item* del(List* list, const char* search_key, const size_t nkey, bool reclaim, bool *found);
 item* replace(List* list, const char* search_key, const size_t nkey, item *new_it, bool reclaim, bool *inserted);
@@ -48,7 +52,16 @@ bool insert_tail(List *list, item* it);
 item* del_head(List* list);
 item* del_tail(List* list);
 
-typedef struct { //TODO: Check if it is aligned correctly with memcached's item
+
+#ifdef MARK_REPLACEMENT
+item* search(List* list, const char* search_key, const size_t nkey, item **left_item, bool ignore_replacement);
+#else //POSTERIOR INSERTION REPLACEMENT
+item* search(List* list, const char* search_key, const size_t nkey, item **left_item);
+item* search_last(List* list, const char* search_key, const size_t nkey, item **left_item);
+#endif
+
+
+typedef struct {
     struct _stritem *next;
 } fake_item;
 
