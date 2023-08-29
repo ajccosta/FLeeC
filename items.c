@@ -398,7 +398,7 @@ int do_item_replace(item *it, item *new_it, const uint32_t hv) {
                            ITEM_key(new_it), new_it->nkey, new_it->nbytes);
     assert((it->it_flags & ITEM_SLABBED) == 0);
 
-#if !defined(MARK_REPLACEMENT) || !defined(POSTERIOR_INSERTION_REPLACEMENT)
+#if !defined(MARK_REPLACEMENT) && !defined(POSTERIOR_INSERTION_REPLACEMENT)
     do_item_unlink(it, hv);
     return do_item_link(new_it, hv);
 #else
