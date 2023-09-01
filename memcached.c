@@ -4875,6 +4875,7 @@ int main (int argc, char **argv) {
           "e:"  /* mmap path for external item memory */
           "o:"  /* Extended generic options */
           "N:"  /* NAPI ID based thread selection */
+          "E:"  /* Ratio of SET requests to cause eviction (e.g. -E 10 will cause 1 in 10 SET requests to cause eviction) */
           ;
 
     /* process arguments */
@@ -5144,6 +5145,16 @@ int main (int argc, char **argv) {
                 return 1;
             }
             break;
+
+	   //Added for testing purposes only
+       case 'E':
+            settings.force_eviction_ratio = atoi(optarg);
+            if (settings.force_eviction_ratio <= 0) {
+                fprintf(stderr, "Force Eviction ratio must be positive.\n");
+                return 1;
+            }
+            break;
+
         case 'o': /* It's sub-opts time! */
             subopts_orig = subopts = strdup(optarg); /* getsubopt() changes the original args */
 

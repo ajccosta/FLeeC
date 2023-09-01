@@ -125,6 +125,7 @@ static size_t item_make_header(const uint8_t nkey, const unsigned int flags, con
     return sizeof(item) + nkey + *nsuffix + nbytes;
 }
 
+
 item *do_item_alloc_pull(const size_t ntotal, const unsigned int id) {
     item *it = NULL;
 
@@ -192,6 +193,13 @@ item_chunk *do_item_alloc_chunk(item_chunk *ch, const size_t bytes_remain) {
     return nch;
 }
 
+
+#define FORCE_EVICTION //To test eviction overhead, force eviction every <settings.force_eviction_ratio> set requests
+						  
+#ifdef FORCE_EVICTION
+__thread int num_set_requests = 0;
+#endif
+
 item *do_item_alloc(const char *key, const size_t nkey, const unsigned int flags,
                     const rel_time_t exptime, const int nbytes) {
     uint8_t nsuffix;
@@ -210,6 +218,18 @@ item *do_item_alloc(const char *key, const size_t nkey, const unsigned int flags
     unsigned int hdr_id = 0;
     if (id == 0)
         return 0;
+
+
+
+#ifdef FORCE_EVICTION
+	if(++num_set_requests % settings.force_eviction_ratio == 0) {
+		int n_evicted = 0, max_retries = 10;
+		while((n_evicted = try_evict(id, ntotal, 0)) == 0 && --max_retries > 0) {}
+		//printf("Evicted %d!\n", n_evicted);
+	}
+#endif
+
+
 
     /* This is a large item. Allocate a header object now, lazily allocate
      *  chunks while reading the upload.
