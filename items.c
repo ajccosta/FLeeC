@@ -222,7 +222,9 @@ item *do_item_alloc(const char *key, const size_t nkey, const unsigned int flags
 
 
 #ifdef FORCE_EVICTION
-	if(++num_set_requests % settings.force_eviction_ratio == 0) {
+	if(settings.force_eviction_ratio != 0 &&
+			++num_set_requests % settings.force_eviction_ratio == 0) {
+
 		int n_evicted = 0, max_retries = 10;
 		while((n_evicted = try_evict(id, ntotal, 0)) == 0 && --max_retries > 0) {}
 		//printf("Evicted %d!\n", n_evicted);
