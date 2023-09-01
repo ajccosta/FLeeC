@@ -617,13 +617,16 @@ item* del_by_ref(List *list, item *to_del, bool reclaim) {
 item* replace(List* list, const char* search_key, const size_t nkey, item *new_it,
     bool reclaim, bool *inserted) {
 
-    item *right_item, *left_item;
+    item *right_item, *left_item = NULL;
 	*inserted = false;
 
     do {
         right_item = search_last(list, search_key, nkey, &left_item);
 
         new_it->next = right_item;
+
+		if(left_item == NULL || left_item->next == NULL)
+			return NULL;
 
         if (CAS(&(left_item->next), &right_item, new_it)) {
 			*inserted = true;
@@ -636,6 +639,10 @@ item* replace(List* list, const char* search_key, const size_t nkey, item *new_i
 	return del(list, search_key, nkey, reclaim, &found);
 }
 
+//Simple search, with slight difference of searching
+//	until current key is not greater than searched key
+//
+//	result: left and right item find last occurrence of a given key in a list
 item* search_last(List* list, const char* search_key, const size_t nkey, item **left_item) {
 	//NULL because of warnings
 	item *left_item_next = NULL, *right_item;
@@ -644,29 +651,19 @@ search_again:
 	do {
         item *t = list->head;
         item *t_next = list->head->next; 
-
         int marked_counter = 0;
 
-		//t and t_next in "previous" traversal step
-        item *t_prev = t;
-        item *t_next_prev = t_next; 
-		
 		//Wether the last item traversal had the same that we are looking for
 		bool last_item_equal = true;
 
 		/* 1: Find left_item and right_item */
         do {
             if (!is_marked_reference(t_next)) {
-                (* left_item) = t_prev;
-                left_item_next = t_next_prev;
+                (* left_item) = t;
+                left_item_next = t_next;
                 marked_counter = 0;
             } else {
                 marked_counter++;
-            }
-
-			if (last_item_equal) {
-				t_prev = t;
-				t_next_prev = t_next;
 			}
 
             t = (item *) get_unmarked_reference(t_next);
@@ -675,29 +672,38 @@ search_again:
 
             t_next = t->next;
 
-			if (!last_item_equal) {
-				t_prev = t;
-				t_next_prev = t_next;
-			}
-
         } while (is_marked_reference(t_next) ||
             //Compare keys
-            ((last_item_equal = KEY_cmp(ITEM_key(t), search_key, t->nkey, nkey) <= 0))); /*B1*/
+            ((last_item_equal = (KEY_cmp(ITEM_key(t), search_key, t->nkey, nkey) <= 0)))); /*B1*/
 
-        right_item = t_prev; 
+
+        right_item = t; 
 
 		/* 2: Check items are adjacent */
         if (left_item_next == right_item) {
-            if ((right_item != list->tail) && is_marked_reference(right_item->next))
+
+            if ((right_item != list->tail) && is_marked_reference(right_item->next)) {
                 goto search_again; /*G1*/
-			else
+			} else
 				return right_item; /*R1*/
 		}
 
- 		/* Don't remove one or more marked items
-		 * 	as it might invert item order and ruin
-		 * 	the sorted nature of the list
-		 */
+ 		/* 3: Remove one or more marked items */
+        if (CAS(&((*left_item)->next), &left_item_next, right_item)) { /*C1*/
+            //Add one or more marked items to be reclaimed
+            item *e = (item*) get_unmarked_reference(left_item_next);
+            while(e != NULL && marked_counter > 0) {
+                ebr_add_retired_item(e, CUSTOM_TYPE);
+                assert(is_marked_reference(e->next));
+                e = (item*) get_unmarked_reference(e->next);
+                marked_counter--;
+            }
+
+            if ((right_item != list->tail) && is_marked_reference(right_item->next))
+				goto search_again; /*G2*/
+            else
+		      	return right_item; /*R2*/
+		}
 
     } while (true); /*B2*/
 }

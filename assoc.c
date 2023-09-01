@@ -225,9 +225,11 @@ int assoc_replace(item *old_it, item *new_it, const uint32_t hv) {
     }
 
 retry:
+
     replace(l, ITEM_key(old_it), old_it->nkey, new_it, true, &inserted);
+
     if(!inserted) {
-	goto retry;
+		goto retry;
     }
 
     return inserted;
