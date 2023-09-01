@@ -289,6 +289,7 @@ static void settings_init(void) {
 #ifdef SOCK_COOKIE_ID
     settings.sock_cookie_id = 0;
 #endif
+	settings.force_eviction_ratio = 0;
 }
 
 extern pthread_mutex_t conn_lock;
@@ -4875,7 +4876,9 @@ int main (int argc, char **argv) {
           "e:"  /* mmap path for external item memory */
           "o:"  /* Extended generic options */
           "N:"  /* NAPI ID based thread selection */
-          "E:"  /* Ratio of SET requests to cause eviction (e.g. -E 10 will cause 1 in 10 SET requests to cause eviction) */
+          "E:"  /* Ratio of SET requests to cause eviction (e.g. -E 10 will cause 1 in 10 SET requests to cause eviction)
+				 * If -E 0, then it is deactivated
+		  		 */
           ;
 
     /* process arguments */
@@ -5149,7 +5152,7 @@ int main (int argc, char **argv) {
 	   //Added for testing purposes only
        case 'E':
             settings.force_eviction_ratio = atoi(optarg);
-            if (settings.force_eviction_ratio <= 0) {
+            if (settings.force_eviction_ratio < 0) {
                 fprintf(stderr, "Force Eviction ratio must be positive.\n");
                 return 1;
             }
