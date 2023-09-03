@@ -194,10 +194,11 @@ item_chunk *do_item_alloc_chunk(item_chunk *ch, const size_t bytes_remain) {
 }
 
 
-#define FORCE_EVICTION //To test eviction overhead, force eviction every <settings.force_eviction_ratio> set requests
-						  
 #ifdef FORCE_EVICTION
+#include <math.h> //To use fmod
+				  
 __thread int num_set_requests = 0;
+double force_eviction_helper;
 #endif
 
 item *do_item_alloc(const char *key, const size_t nkey, const unsigned int flags,
@@ -222,12 +223,11 @@ item *do_item_alloc(const char *key, const size_t nkey, const unsigned int flags
 
 
 #ifdef FORCE_EVICTION
-	if(settings.force_eviction_ratio != 0 &&
-			++num_set_requests % settings.force_eviction_ratio == 0) {
-
+	int sample = (int) fmod(num_set_requests++, force_eviction_helper);
+	
+	if (sample != 0 && settings.force_eviction_ratio != -1) {
 		int n_evicted = 0, max_retries = 10;
 		while((n_evicted = try_evict(id, ntotal, 0)) == 0 && --max_retries > 0) {}
-		//printf("Evicted %d!\n", n_evicted);
 	}
 #endif
 

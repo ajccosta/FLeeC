@@ -289,8 +289,24 @@ static void settings_init(void) {
 #ifdef SOCK_COOKIE_ID
     settings.sock_cookie_id = 0;
 #endif
-	settings.force_eviction_ratio = 0;
+
+#ifdef FORCE_EVICTION
+	settings.force_eviction_ratio = -1;
+#endif
+
+#ifdef FORCE_HITRATIO
+	settings.force_hit_ratio = -1;
+#endif
 }
+
+
+#ifdef FORCE_EVICTION
+	extern double force_eviction_helper;
+#endif
+
+#ifdef FORCE_HITRATIO
+	extern double force_hitratio_helper;
+#endif
 
 extern pthread_mutex_t conn_lock;
 
@@ -4876,9 +4892,15 @@ int main (int argc, char **argv) {
           "e:"  /* mmap path for external item memory */
           "o:"  /* Extended generic options */
           "N:"  /* NAPI ID based thread selection */
+#ifdef FORCE_EVICTION
           "E:"  /* Ratio of SET requests to cause eviction (e.g. -E 10 will cause 1 in 10 SET requests to cause eviction)
 				 * If -E 0, then it is deactivated
 		  		 */
+#endif
+
+#ifdef FORCE_HITRATIO
+		  "H:"  /* Force Hit-Ratio, similar to forced Evictions */
+#endif
           ;
 
     /* process arguments */
@@ -5149,14 +5171,34 @@ int main (int argc, char **argv) {
             }
             break;
 
+#ifdef FORCE_EVICTION
 	   //Added for testing purposes only
        case 'E':
-            settings.force_eviction_ratio = atoi(optarg);
-            if (settings.force_eviction_ratio < 0) {
-                fprintf(stderr, "Force Eviction ratio must be positive.\n");
+            settings.force_eviction_ratio = atof(optarg);
+			force_eviction_helper = 1 / (1 - settings.force_eviction_ratio);
+
+            if (settings.force_eviction_ratio < 0 || settings.force_eviction_ratio > 1) {
+                fprintf(stderr, "Force Eviction ratio must be between 0 and 1.\n");
                 return 1;
             }
             break;
+#endif
+
+
+#ifdef FORCE_HITRATIO
+	   //Added for testing purposes only
+       case 'H':
+            settings.force_hit_ratio = atof(optarg);
+			force_hitratio_helper = 1 / (1 - settings.force_hit_ratio);
+
+			printf("Force Hit Ratio: %lf\n", settings.force_hit_ratio);
+
+            if ((settings.force_hit_ratio < 0 || settings.force_hit_ratio > 1) && settings.force_hit_ratio != -1) {
+                fprintf(stderr, "Force Hit Ratio must be between 0 and 1 (or -1, deactivated).\n");
+                return 1;
+            }
+            break;
+#endif
 
         case 'o': /* It's sub-opts time! */
             subopts_orig = subopts = strdup(optarg); /* getsubopt() changes the original args */

@@ -536,7 +536,8 @@ struct settings {
 #ifdef SOCK_COOKIE_ID
     uint32_t sock_cookie_id;
 #endif
-	uint32_t force_eviction_ratio;
+	double force_eviction_ratio;
+	double force_hit_ratio;
 };
 
 extern struct stats stats;
