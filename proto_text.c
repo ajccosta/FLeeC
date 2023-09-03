@@ -539,6 +539,16 @@ static inline int make_ascii_get_suffix(char *suffix, item *it, bool return_cas,
     return (p - suffix) + 2;
 }
 
+
+
+#ifdef FORCE_HITRATIO
+#include <math.h> //To use fmod
+
+__thread double num_get_requests = 0;
+double force_hitratio_helper;
+#endif
+
+					   
 /* ntokens is overwritten here... shrug.. */
 static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens, bool return_cas, bool should_touch) {
     char *key;
@@ -573,6 +583,24 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
                 fail_length = true;
                 goto stop;
             }
+
+
+
+#ifdef FORCE_HITRATIO
+			int sample = (int) fmod(num_get_requests++, force_hitratio_helper);
+			bool force_miss = settings.force_hit_ratio != -1; //-1 means "off"
+
+			if (sample != 0)
+				force_miss = false;
+
+			if(force_miss) {
+				//printf("Miss %lf!\n", num_get_requests);
+				key = "notfound";
+				nkey = 8;
+			}
+#endif
+
+
 
             it = limited_get(key, nkey, c->thread, exptime, should_touch, DO_UPDATE, &overflow);
             if (settings.detail_enabled) {

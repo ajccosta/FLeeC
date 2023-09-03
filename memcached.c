@@ -290,7 +290,14 @@ static void settings_init(void) {
     settings.sock_cookie_id = 0;
 #endif
 	settings.force_eviction_ratio = 0;
+#ifdef FORCE_HITRATIO
+	settings.force_hit_ratio = -1;
+#endif
 }
+
+#ifdef FORCE_HITRATIO
+	extern double force_hitratio_helper;
+#endif
 
 extern pthread_mutex_t conn_lock;
 
@@ -4879,6 +4886,9 @@ int main (int argc, char **argv) {
           "E:"  /* Ratio of SET requests to cause eviction (e.g. -E 10 will cause 1 in 10 SET requests to cause eviction)
 				 * If -E 0, then it is deactivated
 		  		 */
+#ifdef FORCE_HITRATIO
+		  "H:"  /* Force Hit-Ratio, similar to forced Evictions */
+#endif
           ;
 
     /* process arguments */
@@ -5157,6 +5167,22 @@ int main (int argc, char **argv) {
                 return 1;
             }
             break;
+			
+
+#ifdef FORCE_HITRATIO
+	   //Added for testing purposes only
+       case 'H':
+            settings.force_hit_ratio = atof(optarg);
+			force_hitratio_helper = 1 / (1 - settings.force_hit_ratio);
+
+			printf("Force Hit Ratio: %lf\n", settings.force_hit_ratio);
+
+            if ((settings.force_hit_ratio < 0 || settings.force_hit_ratio > 1) && settings.force_hit_ratio != -1) {
+                fprintf(stderr, "Force Hit Ratio must be between 0 and 1 (or -1, deactivated).\n");
+                return 1;
+            }
+            break;
+#endif
 
         case 'o': /* It's sub-opts time! */
             subopts_orig = subopts = strdup(optarg); /* getsubopt() changes the original args */
