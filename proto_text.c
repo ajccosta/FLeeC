@@ -1932,6 +1932,11 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
         stats_prefix_record_set(key, nkey);
     }
 
+
+	if(tokens[COMMAND_TOKEN].value[0] == 'a') {//Ignore "append" operation
+		flags |= (1 << 15); //Say that this is an ADD operation
+	}
+
     it = item_alloc(key, nkey, flags, exptime, vlen);
 
     if (it == 0) {
