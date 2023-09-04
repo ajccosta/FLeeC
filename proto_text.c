@@ -546,6 +546,8 @@ static inline int make_ascii_get_suffix(char *suffix, item *it, bool return_cas,
 
 __thread double num_get_requests = 0;
 double force_hitratio_helper;
+
+__thread bool force_miss = false;
 #endif
 
 					   
@@ -587,11 +589,12 @@ static inline void process_get_command(conn *c, token_t *tokens, size_t ntokens,
 
 
 #ifdef FORCE_HITRATIO
-			int sample = (int) fmod(num_get_requests++, force_hitratio_helper);
-			bool force_miss = settings.force_hit_ratio != -1; //-1 means "off"
+			//int sample = (int) fmod(num_get_requests++, force_hitratio_helper);
+			//bool force_miss = settings.force_hit_ratio != -1; //-1 means "off"
 
-			if (sample != 0)
-				force_miss = false;
+			//if (sample != 0)
+			//	force_miss = false;
+			force_miss = !force_miss;
 
 			if(force_miss) {
 				//printf("Miss %lf!\n", num_get_requests);
