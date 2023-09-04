@@ -5191,8 +5191,6 @@ int main (int argc, char **argv) {
             settings.force_hit_ratio = atof(optarg);
 			force_hitratio_helper = 1 / (1 - settings.force_hit_ratio);
 
-			printf("Force Hit Ratio: %lf\n", settings.force_hit_ratio);
-
             if ((settings.force_hit_ratio < 0 || settings.force_hit_ratio > 1) && settings.force_hit_ratio != -1) {
                 fprintf(stderr, "Force Hit Ratio must be between 0 and 1 (or -1, deactivated).\n");
                 return 1;
