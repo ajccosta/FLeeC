@@ -224,6 +224,7 @@ item *do_item_alloc(const char *key, const size_t nkey, const unsigned int flags
 
 #ifdef FORCE_EVICTION
 	bool is_add_op = (flags & (1 << 15)) != 0;
+	is_add_op = false;
 
 	if(!is_add_op) {
 		int sample = (int) fmod(num_set_requests++, force_eviction_helper);
