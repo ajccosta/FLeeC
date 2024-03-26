@@ -1933,9 +1933,11 @@ static void process_update_command(conn *c, token_t *tokens, const size_t ntoken
     }
 
 
-	if(tokens[COMMAND_TOKEN].value[0] == 'a') {//Ignore "append" operation
-		flags |= (1 << 15); //Say that this is an ADD operation
-	}
+	//This was removed in newer versions of memcached. Don't really know what they are for
+	//	the spymemcached java client detected that the flags had changed and spit out a warning!
+	//if(tokens[COMMAND_TOKEN].value[0] == 'a') {//Ignore "append" operation
+	//	flags |= (1 << 15); //Say that this is an ADD operation
+	//}
 
     it = item_alloc(key, nkey, flags, exptime, vlen);
 
